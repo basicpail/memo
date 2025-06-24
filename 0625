@@ -1,0 +1,66 @@
+static
+EXT
+union
+programma
+
+####
+인터럽트 발동되는 부분 확인
+딥 스위치로 설정 바꾸는 것도 인터럽트 발생하겠지?
+그렇다면 딥 스위치 데이터를 실시간으로 읽어올 수도 있겠지?
+인터럽트 시작과 끝 확인 (인터럽트 동안은 그 인터럽트에 갇혀 있을 테니 pending 되는 위험이 있겠다)
+
+CAN 통신 데이터 프레임 확인
+비트단위 값 할당법
+MSG_ID에 따른 메시지 우선순위는 없는가?
+Transmit할 때 수신 대상을 정해놓고 전송하는지?
+
+init_flag
+SYSTEM_ALARM 같은 이해하기 어려운 변수들을 빨리 파악해야겠다.
+
+코드 진행하면서 디버깅 해볼 순 없나?
+
+예외처리 해줘야한다.
+--------------------------------------------------
+
+// FUNCTION DEFINE
+
+void SeqTimeRead(void);                  // 외부 입력을 통해 순차 기동 시간 설정 (DIP 스위치 등)
+void BuildUpTimeRead(void);             // 압력 상승(Build-Up) 시간 설정 입력을 읽음
+void ParallelTimeRead(void);            // 병렬 펌프 운전 시 대기 시간 설정 입력을 읽음
+void HeatingOnTimeRead(void);           // 히터 작동 유지 시간 설정 입력을 읽음
+void Latch(void);                       // PORTD 출력을 외부 래치 회로에 전달하여 상태 고정
+
+void ERPomRead(unsigned char command);  // EEPROM에서 상태값(Read) 복원
+void EPRomWrite(unsigned char command, unsigned char value);  // EEPROM에 상태값 저장
+
+void RunStopCont(unsigned char command); // 릴레이 등을 제어하여 펌프 ON/OFF
+void RunStopProc(unsigned char command); // 운전 상태 전환을 위한 내부 로직 처리
+
+void RunInput(void);                    // 운전 관련 버튼/신호 입력 처리
+void HeatCont(unsigned char command);   // 히터 제어 신호 제어 (ON/OFF)
+void HeatProc(unsigned char command);   // 히터 관련 내부 처리 및 상태 업데이트
+
+void ModeProc(unsigned char command);   // 운전 모드 전환 처리 (Manual / Auto 등)
+void KeyProc(void);                     // 키 입력 (버튼 등) 처리
+
+void OverloadProc(unsigned char command); // 과부하 상황 처리 및 램프/운전 상태 제어
+void LowpressProc(unsigned char command); // 저압 상태 감지 및 병렬 운전 조건 판단
+
+void LampSigCont(unsigned char name, unsigned char cmd); // 램프 및 경고등 출력 제어
+
+void InputChattProc(void);              // 버튼 등 입력 신호의 채터링 방지 처리
+void ComFailErrorFlag(void);            // 통신 실패 오류 상태 처리
+
+void CanRevMsg(void);                   // CAN 수신 메시지 처리 및 상태 저장
+void CanIdRead(unsigned char value1, unsigned char value2); // CAN ID 설정 포트 읽기
+
+void ReceiveRunReq(void);               // 수신된 Run Request 신호 처리
+void SendRunReq(void);                  // Run Request 신호를 CAN으로 전송
+
+void STBYStartAlarm(void);              // StandBy 상태에서 기동 시작 시 알람 발생 처리
+
+void ConnectProc(unsigned char status); // 통신 연결 상태에 따른 처리
+void ConnectFunction(void);             // 주변 장치와의 연결 기능 수행
+
+void Chattering(unsigned char value3, unsigned char value2, unsigned char value1); // 입력 채터링 필터 처리
+void StandByLampProc(unsigned char mode); // 대기 상태 램프 처리 로직
