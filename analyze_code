@@ -1,0 +1,186 @@
+PSTAR-V2 내용 파헤치기
+Programmable Starter Unit의 생소한 용어, 개념, 구조들을 정리해보기 위한 페이지
+ 정의
+// FUNCTION DEFINE
+
+void SeqTimeRead(void);                  // 외부 입력을 통해 순차 기동 시간 설정 (DIP 스위치 등)
+void BuildUpTimeRead(void);             // 압력 상승(Build-Up) 시간 설정 입력을 읽음
+void ParallelTimeRead(void);            // 병렬 펌프 운전 시 대기 시간 설정 입력을 읽음
+void HeatingOnTimeRead(void);           // 히터 작동 유지 시간 설정 입력을 읽음
+void Latch(void);                       // PORTD 출력을 외부 래치 회로에 전달하여 상태 고정
+
+void ERPomRead(unsigned char command);  // EEPROM에서 상태값(Read) 복원
+void EPRomWrite(unsigned char command, unsigned char value);  // EEPROM에 상태값 저장
+
+void RunStopCont(unsigned char command); // 릴레이 등을 제어하여 펌프 ON/OFF
+void RunStopProc(unsigned char command); // 운전 상태 전환을 위한 내부 로직 처리
+
+void RunInput(void);                    // 운전 관련 버튼/신호 입력 처리
+void HeatCont(unsigned char command);   // 히터 제어 신호 제어 (ON/OFF)
+void HeatProc(unsigned char command);   // 히터 관련 내부 처리 및 상태 업데이트
+
+void ModeProc(unsigned char command);   // 운전 모드 전환 처리 (Manual / Auto 등)
+void KeyProc(void);                     // 키 입력 (버튼 등) 처리
+
+void OverloadProc(unsigned char command); // 과부하 상황 처리 및 램프/운전 상태 제어
+void LowpressProc(unsigned char command); // 저압 상태 감지 및 병렬 운전 조건 판단
+
+void LampSigCont(unsigned char name, unsigned char cmd); // 램프 및 경고등 출력 제어
+
+void InputChattProc(void);              // 버튼 등 입력 신호의 채터링 방지 처리
+void ComFailErrorFlag(void);            // 통신 실패 오류 상태 처리
+
+void CanRevMsg(void);                   // CAN 수신 메시지 처리 및 상태 저장
+void CanIdRead(unsigned char value1, unsigned char value2); // CAN ID 설정 포트 읽기
+
+void ReceiveRunReq(void);               // 수신된 Run Request 신호 처리
+void SendRunReq(void);                  // Run Request 신호를 CAN으로 전송
+
+void STBYStartAlarm(void);              // StandBy 상태에서 기동 시작 시 알람 발생 처리
+
+void ConnectProc(unsigned char status); // 통신 연결 상태에 따른 처리
+void ConnectFunction(void);             // 주변 장치와의 연결 기능 수행
+
+void Chattering(unsigned char value3, unsigned char value2, unsigned char value1); // 입력 채터링 필터 처리
+void StandByLampProc(unsigned char mode); // 대기 상태 램프 처리 로직
+
+
+
+
+
+
+
+
+
+
+
+
+#CAN 관련 선언
+CAN_MSG_OBJ 구조체 타입 선언부
+Can_types.h
+typedef union 
+{
+    uint8_t msgfields;
+    struct
+    {
+        uint8_t idType:1;       // 1 bit (Standard Frame or Extended Frame) 0:Standard ID (11bit), 1:Extended ID(29bit)
+        uint8_t frameType:1;    // 1 bit (Data Frame or RTR Frame) 0: Data Frame, 1: Remote Frame(RTR)
+        uint8_t dlc:4;          // 4 bit (No of data bytes a message frame contains) DLC(Data Length Code)프레임에 포함된 데이터 바이트수 (0~15)
+        uint8_t formatType:1;   // 1 bit (CAN 2.0 Format or CAN_FD Format)
+        uint8_t brs:1;          // 1 bit (BRS: Bit Rate Switch) CAN FD에서 더 높은 전송 속도 지원
+    };
+} CAN_MSG_FIELD;
+
+typedef struct 
+{
+    uint32_t msgId;          // 29 bit (SID: 11bit, EID:18bit)
+    CAN_MSG_FIELD field;     // CAN TX/RX Message Object Control
+    uint8_t *data;           // Pointer to message data
+} CAN_MSG_OBJ;
+#main.c 의 CAN1_Transmit 부분
+if(CountCanDelay_mS >= CanDelay_mS)
+{
+    CountCanDelay_mS = 0;
+            
+    if(CAN_TX_FIFO_AVAILABLE == (CAN1_TransmitFIFOStatusGet(TXQ) & CAN_TX_FIFO_AVAILABLE))
+        tx_status = CAN1_Transmit(TXQ, &msg_tx); //함수 호출 후 반환값을 tx_status에 저장 하는건가?
+}
+
+ 호출
+
+#CAN  관련
+RA6, RA7 딥 스위치를 통해서 1,2,3으로 결정된다.
+#define CAN_ID1             PORTAbits.RA6
+#define CAN_ID2             PORTAbits.RA7
+
+can_id, msg_id 변수 선언;
+unsigned char CAN_ID = 0;
+unsigned int MSG_ID = 0;
+
+CanIdRead(CAN_ID1, CAN_ID2); main에서 함수 호출하여 can_id, msg_id 계산
+RA6 == 0 , RA7 == 1 이면 MSG_ID = 0x100; CAN_ID = 1;
+RA6 == 1 , RA7 == 0 이면 MSG_ID = 0x200; CAN_ID = 2;
+RA6 == 0 , RA7 == 0 이면 MSG_ID = 0x300; CAN_ID = 3;
+
+msg_tx의 필드에 값을 넣어서 tx 를 setting 한다.
+msg_tx, msg_tx는 CAN_MSG_OBJ 구조체 타입
+msg_tx.msgId = MSG_ID; //CAN_ID1, CAN_ID2에 의해서 결정
+msg_tx.field.formatType = CAN_2_0_FORMAT; //can_types.h에 선언된 enum 타입, CAN_2_0_FORMAT = 0, CAN_FD_FORMAT = 1
+msg_tx.field.brs = CAN_NON_BRS_MODE; //can_types.h에 선언된 enum 타입, CAN_NON_BRS_MODE = 0 , CAN_BRS_MODE = 1
+msg_tx.field.frameType = CAN_FRAME_DATA; //can_types.h에 선언된 enum 타입, CAN_FRAME_DATA = 0, CAN_FRAME_RTR = 1;
+msg_tx.field.idType = CAN_FRAME_STD; //can_types.h에 선언된 enum 타입, CAN_FRAME_STD = 0, CAN_FRAME_EXT = 1
+msg_tx.field.dlc = DLC_8; //can_types.h에 선언된 enum 타입, DLC_8 == 9
+msg_tx.tx_data //처음에는 빈 배열로 초기화 된다. Unsigned char tx_data[8];
+
+while(1) 루프 안에서 tx_data 배열에 대한 요소로 동작 상태 값들을 할당.
+상태 초기 값들은 unsigned char 형으로 선언되고, 값에는 정수값 0이 들어간다.
+STATUS를 위한 상수 값들이 #define으로 선언되어 있다. ON 1 , OFF 0 / RUN 1 / STOP 0 
+tx_data[0] = STBY_Start; //
+tx_data[1] = RunLamp;
+tx_data[2] = Overload;
+tx_data[3] = ModeStatus; // MANUAL or ST'BY Mode
+tx_data[4] = RUN_req;
+tx_data[5] = ResetButton;
+tx_data[6] = StandByLamp;
+tx_data[7] = TXLowpress;
+왜 msg_tx.data = tx_data; 를 빈 배열로 초기화 해놓고 tx_data를 셋팅하는거지? tx_data에 값을 넣고 msg_tx.data에 할당 하는게 더 좋은 방법 아닌가?
+
+CANDelay_mS 값을 통해서 통신 interval을 설정한다.
+main.c 에 #define CanDelay_mS 2, unsigned short CountCanDelay_mS로 정의 되어 있음. 하지만 main.c 에서는 그 둘을 다루는 로직이 없다.
+trim.c 에서도 unsigned short CountCanDelay_mS = 0; 으로 초기화하고, TMR0_DefaultInterruptHandler 함수에서 CountCanDelay_mS++; 로 처리하고 있다.
+
+TXQ 는 typedef enum 0
+CAN_TX_FIFO_FULL 0, CAN_TX_FIFO_AVAILABLE 는 1
+
+CAN1_TransmitFIFOStatusGet // FIFO 버퍼 상태 읽기,
+CAN_TX_FIFO_AVAILABLE // 송신 버퍼에 공간이 있는지 확인용 비트마스크
+CAN1_Transmit //실제로 메시지 전송
+
+
+Power FAIL 후 Power Recovery
+Unsigned char initFlag = 0 으로 초기화.
+SeqTime_mS 값을 통해서 UVR, UVP 판단. SeqTimeRead 호출해서 seqTime_mS 값 설정한다. SeqTimeRead 함수를 해석하려면 구조 이해가 필요. 딥스위치와 PORTD 사이에 래치가 있다.TRISD = 0xFF; 는 PORTD를 입력모드로 설정하여 딥스위치  값을 래치를 통해 받아 들일 준비를 한다. 
+
+
+
+
+
+
+#StandBy 관련
+STBYStartAlarm 호출을 통해서 STBY_Start 설정
+
+
+
+
+
+
+Question
+인터럽트 발동되는 부분 확인
+딥 스위치로 설정 바꾸는 것도 인터럽트 발생하겠지?
+그렇다면 딥 스위치 데이터를 실시간으로 읽어올 수도 있겠지?
+인터럽트 시작과 끝 확인 (인터럽트 동안은 그 인터럽트에 갇혀 있을 테니 pending 되는 위험이 있겠다)
+
+CAN 통신 데이터 프레임 확인
+비트단위 값 할당법
+MSG_ID에 따른 메시지 우선순위는 없는가?
+Transmit할 때 수신 대상을 정해놓고 전송하는지?
+
+init_flag
+SYSTEM_ALARM 같은 이해하기 어려운 변수들을 빨리 파악해야겠다.
+
+코드 진행하면서 디버깅 해볼 순 없나?
+
+예외처리 해줘야한다.
+--------------------------------------------------
+
+
+
+
+자료
+static
+EXT
+union
+programma
+
+
+
