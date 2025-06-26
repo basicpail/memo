@@ -1,0 +1,113 @@
+	"CAN DATA TABLE
+- SHEET1.""CAN DATA ICD"" SOURCE 장치기준으로 CAN ID 선정(안)  "														
+	CAN ID	MSG ID	Source	Destination	Category	Byte	Description								
+							Bit 7	Bit 6	Bit 5	Bit 4	Bit 3	Bit 2	Bit 1	Bit 0	
+	"1
+2
+3"	"0x100
+0x200
+0x300"	"PSTAR#1
+PSTAR#2
+PSTAR#3"	"PSTAR#1
+PSTAR#2
+PSTAR#3"	COM	0	CAN_ID		CAN_Interval		COM_ERROR	COM_STATUS			
+					LAMP&SIG	1	LAMP & SIGNAL				OverLoad	LowPress	PowerFail	Mode	
+					Timer	2			SequenceTime						
+					Timer	3			BuildingTime						
+					Timer	4			ParallelTime						
+					Timer	5			HeatingOnTime						
+					Timer	6						LowPressureChatteringTime			
+					Timer	7	Timer_Type		CurentTimerValue						
+															
+															
+	Name	Byte	"Length
+(bits)"	"Value
+(dec)"	Description										
+															
+	CAN_ID	0	2	1~3	딥 스위치로 설정한 CAN_ID를 나타낸다.										
+	CAN_Interval	0	2	1~3	CAN 메시지 큐를 처리하는 주기를 나타낸다. 1: 100ms										
+	COM_ERROR	0	1	0,1	통신 연결 에러를 나타낸다. Com_Error : 0, Com_Normal : 1										
+	COM_STATUS	0	3	0~6	"                            통신 상태를 나타낸다.
+0 : NoConnection
+1 : StandBy_3to2
+2 : StandBy_2
+3 : StandBy_3
+4 : Manual
+5 : StandBy_3_1Run
+6 : StandBy_3to2_1RUN"										
+															
+															
+															
+															
+															
+															
+															
+	LAMP&SIGNAL	1	4	0~15	"                        램프 상태 와 신호 값을 나타낸다.
+0 : ABN_LAMP
+1 : STAND_BY_LAMP
+2: STOP_LAMP
+3 : LOW_PRESS_LAMP
+4 : COM_FAULT_LAMP
+5 : HEAT_ON_LAMP
+6 : MODE_MANUAL_LAMP
+7 : MODE_STBY_LAMP
+8 : RUN_LAMP
+9 : RUN_SIG
+10 : HEATING_SIG
+11 : STOP_SIG
+12 : STBY_START_ALARM
+13 : STAND_BY_SIG
+14 : RUN_req
+15 : ResetButton"										
+															
+															
+															
+															
+															
+															
+															
+															
+															
+															
+															
+															
+															
+															
+	OverLoad	1	1	0 , 1	"과부하 상황 발생 플래그
+ON : 1 , OFF : 0"										
+															
+	LowPress	1	1	0 , 1	"압력 저하 상황 발생 플래그
+ON : 1 , OFF : 0"										
+															
+	PowerFail	1	1	0 , 1	"POWER FAIL 상황 발생 플래그
+ON : 1 , OFF : 0"										
+															
+	Mode	1	1	0 , 1	"운전 모드 표시
+MANUAL_MODE : 0 , STBY_MODE : 1"										
+															
+	SequenceTime	2	6	0~63	"SequenceTime 설정 값을 표시
+0~62초 : UVR , 63초 : UVP"										
+															
+	BuildingTime	3	6	0~63	"BuildingTime 설정 값을 표시
+0 ~ 63초"										
+															
+	ParallelTime	4	6	0~63	"ParallelTime 설정 값을 표시
+0 ~ 63초"										
+															
+	HeatingOnTime	5	6	0~63	"ParallelTime 설정 값을 표시
+0 ~ 63초"										
+															
+	"LowPressure
+ChatteringTime"	6	3	0~7	"저압이 감지 되었을 때 판단 기준 시간을 표시
+0 ~ 7초"										
+															
+	Timer_Type	7	2	0~3	"                모니터링 할 타이머 값의 타입을 선택한다.
+0 : SequenceTime
+1 : BuildingTime
+2 : ParallelTime
+3 : LowPressureChatteringTime"										
+															
+															
+															
+															
+	CurentTimerValue	7	6	0~63	Timer_Type에 해당하는 타이머의 현재 값을 표시한다.										
