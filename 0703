@@ -29,3 +29,5 @@ fault 확인
 Error_Flag1 -> ID1번이 통신 잘 되다가 갑자기 연결이 끊어진 상태에 올린다.
 //1번이 연결이 끊겼는데 아까전 까지만해도 RUN 상태였다면, 그리고 내가 StandBy 상태라면 내가 RUN을 한다.
 if (StandByLamp == ON && rx_data1[1] == RUN)    RunStatus = RUN; // Auto Change Over
+
+STAND_BY_SIG은 STBY_LAMP 켜지면 ON..
