@@ -1,0 +1,1040 @@
+////////////Default 페이지에서 값을 지정함//////////////////////
+const V_Axis_Num = Number(localStorage.getItem("V_Axis_Num"));
+const A_Axis_Num = Number(localStorage.getItem("A_Axis_Num"));
+const L_Axis_Num = Number(localStorage.getItem("L_Axis_Num"));
+const Total_Axis_Num = V_Axis_Num + A_Axis_Num + L_Axis_Num;
+
+///////////한 페이지에서 최대로 볼수 있는 Row 갯수//////////////
+const Visible_Row_Num = 10;
+
+////////// 페이지 최대 갯수
+const Page_Max = Math.ceil(Total_Axis_Num / Visible_Row_Num);
+
+////////////////자동 로그아웃에 대하여 터치시 카운트를 초기화 시키는 기능 ///////////////////////////
+var iframe= webMI.rootWindow.document.querySelector("#page_main_myframe").contentWindow.document.body;
+
+iframe.addEventListener("click", () => {
+  localStorage.setItem("NoTouchCount",0);
+});   
+
+var color = webMI.query["color"];
+var dgs_mode;
+var now_page = 1;
+//////////////테스트 apply 주소지////////////////////////////
+var apply_addr = "AGENT.OBJECTS.07_TEST..Apply_PSU_Test";
+
+webMI.trigger.fire("btn_inactive", "apply");						// 적용 버튼 클릭 x -> 입력 값 생기는 경우 활성화
+webMI.trigger.fire("btn_inactive", "pre_page");				// 페이지 이전 버튼 비활성화 -> 다음 버튼 누르는 경우 활성화
+webMI.gfx.setText("apply_popup_lbl_title", "T{코일 전원 공급기 정격 전류 세팅 값 변경}");
+
+///////////////////////////////////////////////////////////////////////////////
+var check_value ={};
+var previous_value = {};/////////// Row에 해당하는 축이름 지정///////
+////////// ex) 1 : V1, 2 : V2 ....... 9 : A1 .....등
+var addr_list = {};
+
+
+var rowMapping ={};
+
+for (let i = 1; i <= V_Axis_Num; i++)
+{
+	rowMapping[i] = "V" + i;
+}
+
+for (let i = 1; i <= A_Axis_Num; i++)
+{
+	rowMapping[i + V_Axis_Num] = "A" + i;
+}
+
+for (let i = 1; i <= L_Axis_Num; i++)
+{
+	rowMapping[i + V_Axis_Num + A_Axis_Num] = "L" + i;
+}
+
+////////// 표의 세로 줄의 데이터 주소지의 끝이름/////////////////////////////////
+var colMapping =
+{
+	1: "Current_Rated", 2: "Current_Max", 3: "Current_Actual", 4: "Current_Diff", 5: "Voltage",
+};
+
+///////////// 전체 최대값 지정/////////////////////
+var maxMapping ={};
+
+///////// 키패드로 입력 시 세로줄에 해당하는 데이터의 정수부분 갯수//////////
+//////// 현재 1번째 줄만 데이터 입력가능하여 다른 정보는 필요없음/////////
+var digitMapping =
+{
+	1: 2, 
+	2 : 4, 
+	3 : 2, 
+	4 : 3, 
+	5 : 3
+};
+
+///////// 키패드로 입력 시 세로줄에 해당하는 데이터의 소수점 갯수//////////
+//////// 현재 1번째 줄만 데이터 입력가능하여 다른 정보는 필요없음/////////
+var dotMapping =
+{
+	1: 2, 
+	2 : 3, 
+	3 : 0, 
+	4 : 1, 
+	5 : 0
+};
+
+///////// 키패드로 입력 시 세로줄에 해당하는 데이터의 +/- 유무//////////
+//////// 현재 1번째 줄만 데이터 입력가능하여 다른 정보는 필요없음/////////
+var signMapping =
+{
+	1: true, 
+	2 : false, 
+	3 : true, 
+	4 : false, 
+	5 : false
+};
+
+var click_cell = null;
+var cell_id = [];
+
+///////////////////////////*  주/야간 색상 변경  *///////////////////////////
+var color_mode = localStorage.getItem("Color_Mode");
+Color_Day_Night(color_mode);
+Probe_MF_Read();
+
+webMI.trigger.connect("Color_Mode_Change",function(e)
+{
+	color_mode = e.value;
+	Color_Day_Night(color_mode);
+});
+
+function Color_Day_Night(color_mode)
+{
+	webMI.gfx.setFill("background_display", color.Main_Background[color_mode]);
+	
+	webMI.gfx.setFill("bento_1", color.Bento[color_mode]);
+	webMI.gfx.setFill("bento_2", color.Bento[color_mode]);
+	webMI.gfx.setFill("bento_3", color.Bento[color_mode]);
+	
+	webMI.gfx.setFill("lbl_PSU", color.Font_Default[color_mode]);
+	webMI.gfx.setFill("lbl_probe", color.Font_Default[color_mode]);
+	webMI.gfx.setFill("text_page", color.Font_Default[color_mode]);
+
+	var opacity = {Day : 0.8, Night : 0.4};	
+	webMI.gfx.setFill("shadow_footer",color.Shadow[color_mode]);
+	
+	webMI.gfx.setFillOpacity("shadow_footer",opacity[color_mode]);
+}
+
+///////////////////////////*  소자 모드 읽어오기  *///////////////////////////
+webMI.data.read("AGENT.OBJECTS.Control._DGM", function(e)	
+{
+	webMI.gfx.setVisible("shadow_footer", true);
+
+	if (e.value == 1)
+	{
+		dgs_mode = "수동";
+		webMI.trigger.fire("btn_inactive", "all_0");
+		webMI.trigger.fire("btn_inactive", "all_max");
+		webMI.trigger.fire("btn_inactive","btn_test");
+	}
+	else if (e.value == 2)
+	{
+		dgs_mode = "자동";
+		webMI.trigger.fire("btn_inactive", "all_0");
+		webMI.trigger.fire("btn_inactive", "all_max");
+		webMI.trigger.fire("btn_inactive","btn_test");
+	}
+	else if (e.value == 3)
+	{
+		dgs_mode = "비활성화";
+		webMI.trigger.fire("btn_active", "all_0");
+		webMI.trigger.fire("btn_active", "all_max");
+		webMI.trigger.fire("btn_active","btn_test");
+	}
+	
+	Init_Data();
+});
+
+//////////////초기 데이터 가져오기 및 주소지 지정/////////////////////
+function Init_Data()
+{
+	for (let row = 1; row <= Total_Axis_Num; row++)	///////// 전체 축 갯수만큼 반복
+	{
+		if (row <= Visible_Row_Num)					///////// 한페이지에 보여지는 Row 갯수만큼만 cell_id 지정 
+		{
+			cell_id.push(`row${row}_col1`);			//////////클릭하여 수정 가능한 데이터 셀의 아이디 추가 목적
+		}	
+	
+		for (let col = 1; col <= 5; col++)					/// 세로 갯수에 따라 반복
+		{
+			let axis = rowMapping[row];					/////// V1, V2와 같은 Row에 따른 축이름 가져오기///////////////
+			let col_name = colMapping[col];			////// 표의 세로 축 번호에 따라 데이터 주소지 끝부분 가져오기/////////////////
+			let index = `row${row}_col${col}`;		
+
+			addr_list[index] = `AGENT.OBJECTS.07_TEST..PSU_${axis}.${col_name}`; // 데이터 주소 맵핑
+			
+			let addr = addr_list[index];
+			
+			if (col != 1)				/////////// 첫번째 줄만 수정 가능함으로 첫번째 줄이 아닌 줄은 구독하여 값이 변경됨을 감지
+			{
+				webMI.data.subscribe(addr, function(e)
+				{
+					if(col == 2)
+					{
+						maxMapping[row] = e.value;
+					}
+					previous_value[index] = e.value;
+				});
+			}
+			else						////////////첫 번째 줄
+			{
+				if (dgs_mode == "비활성화")		
+				{
+					webMI.data.read(addr, function(e)		////////비활성화 상태라면 값변경이 가능함으로 값을 한번만 읽음
+					{
+						let preValue = e.value;
+						previous_value[index] = preValue;
+						webMI.data.write(addr + "_Temp", preValue);	///////////////해당 주소지에 해당하는 Temp 주소지에 현재 값 쓰기
+					});
+				}
+				else
+				{
+					webMI.data.subscribe(addr, function(e)		////////비활성화 상태가 아니라면 구독하여 값 변경 감지
+					{
+						previous_value[index] = e.value;
+					});
+				}
+			}
+		}
+	}
+	
+	Cell_Click_Event(cell_id);
+	setTimeout(() => {Table_Data();},300);
+}
+
+/////////////////////////*  3축 자기센서 프로브 테스트 값 읽어오기  *///////////////////////////
+
+function Probe_MF_Read()
+{
+	webMI.data.subscribe("AGENT.OBJECTS.07_TEST..Probe1_V", function(e)
+	{
+		webMI.gfx.setText("tb_probe1_V_text_center", e.value.toFixed(1));
+		webMI.gfx.setFill("tb_probe1_V_text_center", color.Font_Default[color_mode]);
+	});
+	
+	webMI.data.subscribe("AGENT.OBJECTS.07_TEST..Probe1_A", function(e)
+	{
+		webMI.gfx.setText("tb_probe1_A_text_center", e.value.toFixed(1));
+		webMI.gfx.setFill("tb_probe1_A_text_center", color.Font_Default[color_mode]);
+	});
+	
+	webMI.data.subscribe("AGENT.OBJECTS.07_TEST..Probe1_L", function(e)
+	{
+		webMI.gfx.setText("tb_probe1_L_text_center", e.value.toFixed(1));
+		webMI.gfx.setFill("tb_probe1_L_text_center", color.Font_Default[color_mode]);
+	});
+	
+	webMI.data.subscribe("AGENT.OBJECTS.07_TEST..Probe2_V", function(e)
+	{
+		webMI.gfx.setText("tb_probe2_V_text_center", e.value.toFixed(1));
+		webMI.gfx.setFill("tb_probe2_V_text_center", color.Font_Default[color_mode]);
+	});
+	
+	webMI.data.subscribe("AGENT.OBJECTS.07_TEST..Probe2_A", function(e)
+	{
+		webMI.gfx.setText("tb_probe2_A_text_center", e.value.toFixed(1));
+		webMI.gfx.setFill("tb_probe2_A_text_center", color.Font_Default[color_mode]);
+	});
+	
+	webMI.data.subscribe("AGENT.OBJECTS.07_TEST..Probe2_L", function(e)
+	{
+		webMI.gfx.setText("tb_probe2_L_text_center", e.value.toFixed(1));
+		webMI.gfx.setFill("tb_probe2_L_text_center", color.Font_Default[color_mode]);
+	});
+}
+
+/////////////////////////////테스트 실행 버튼 ////////////////////////////////////
+webMI.addEvent("btn_test", "click", function(e) {
+
+	if (dgs_mode != "비활성화")
+	{
+		return;
+	}
+		
+	webMI.data.write("AGENT.OBJECTS.07_TEST..Set_Probe",1);
+});
+
+////////////////테이블에 데이터 매핑/////////////////
+function Table_Data()
+{
+	Change_Table_First_Col(now_page);	// 축 이름 변경
+
+	for (let row = 1; row <= Visible_Row_Num; row++)							////////////// 한페이지에서 보여지는 Row 갯수 만큼만 반복//////////////
+	{
+		for (let col = 1; col <= 5; col++)								/////////// col 갯수 만큼 반복
+		{
+			let text = `row${row}_col${col}_text_center`;					///////////// 데이터 셀의 text id
+			let background = `row${row}_col${col}_background`;		////////// 데이터 셀의 배경색 id
+			let now_row = row + (now_page -1) * Visible_Row_Num;	//////// 페이지 번호를 포함한 실제 row 값
+			let index = `row${now_row}_col${col}`;		//////// 실제 row 값을 포함한 셀 index
+			webMI.gfx.setText(text, "");						////////일단 글자 초기화
+			
+			if (previous_value[index] != undefined)		///////// 값이 있다면 
+			{
+				if (col == 1 && dgs_mode == "비활성화")			////////////// 첫번째 col이고 비활성화면 제어가능
+				{
+					webMI.gfx.setFill(background, color.Table_Cell_Background_Control[color_mode]);	// 제어(검은색)
+
+				}
+				else			////////////// 제어 불가능
+				{
+					webMI.gfx.setFill(background, color.Table_Cell_Background_Monitoring[color_mode]);	// 감시(회색)
+				}
+				
+				if (check_value[index] != undefined)				////////// 해당 인덱스에 키패드로 확인한 값이 있다면 초록색 및 확인값 전시
+				{
+					webMI.gfx.setText(text, check_value[index]);
+					webMI.gfx.setFill(text, color.Green_Active[color_mode]);
+				}
+				else	////////// 해당 인덱스에 키패드로 확인한 값이 없을 때
+				{
+					webMI.gfx.setText(text, previous_value[index]);		///////// 이전값 전시
+					
+					if (col == 1 && dgs_mode == "비활성화")				//////// 제어가능한 셀에서는 글자색이 더욱 도드라져야함
+					{
+						webMI.gfx.setFill(text, color.Font_Table_Data[color_mode]);	//////// 제어가능한 셀에서는 글자색이 더욱 도드라져야함
+					}
+					else
+					{
+						webMI.gfx.setFill(text, color.Font_Default[color_mode]);	//////// 제어 불가능한 셀의 텍스트 색상
+					}
+				}				
+				
+			}
+			else				//// 값이 없다면 데이터 전시가 필요없은 빈 셀
+			{
+				webMI.gfx.setFill(background, color.Table_Cell_Background_Control[color_mode]);	// 제어(검은색)
+			}	
+		}
+	}
+}
+
+///////////////////////////*  테이블 첫 열(축) 텍스트 변경  *///////////////////////////
+
+function Change_Table_First_Col(pageNum)
+{
+	for (let row = 1; row <= Visible_Row_Num; row++)
+	{
+		let index = row + (pageNum -1) * Visible_Row_Num;			//////// 페이지 번호를 포함한 실제 row 값
+		
+		if (rowMapping[index] != undefined)
+		{
+			webMI.gfx.setText(`tb_row${row}_text_center`, rowMapping[index]);
+		}
+		else
+		{
+			webMI.gfx.setText(`tb_row${row}_text_center`, "");
+		}		
+	}
+}
+
+
+///////////////////////////*  페이지 버튼 클릭 이벤트 *///////////////////////////
+
+webMI.addEvent("btn_pre_page", "click", function(e)
+{
+	if (now_page <= 1)
+	{
+		return;
+	}	
+		
+	pre_click_cell = null;
+	click_cell = null;
+	now_page--;	
+	
+	webMI.gfx.setVisible("shadow_footer", true);
+	Page_Text_Change();				//////// 페이지 텍스트 변경 
+	Table_Data();				////////페이지에 따른 테이블 값 전시 변경
+});
+
+
+webMI.addEvent("btn_next_page", "click", function(e)
+{
+	if (now_page >= Page_Max)
+	{
+		return;
+	}	
+		
+	pre_click_cell = null;
+	click_cell = null;
+	now_page++;	
+	
+	webMI.gfx.setVisible("shadow_footer", true);
+	Page_Text_Change();		//////// 페이지 텍스트 변경 
+	Table_Data();			////////페이지에 따른 테이블 값 전시 변경
+});
+
+function Page_Text_Change()
+{
+	if (now_page <= 1)
+	{
+		webMI.trigger.fire("btn_inactive", "pre_page");
+		webMI.trigger.fire("btn_active", "next_page");	
+	}
+	else if (now_page < Page_Max)
+	{
+		webMI.trigger.fire("btn_active", "pre_page");
+		webMI.trigger.fire("btn_active", "next_page");	
+	}
+	else
+	{
+		webMI.trigger.fire("btn_active", "pre_page");
+		webMI.trigger.fire("btn_inactive", "next_page");	
+	}
+
+	webMI.gfx.setText("text_page", String(now_page).padStart(2, '0') + " | " + String(Page_Max).padStart(2, '0') );
+}
+
+/////////////전체 0 입력/////////////////////////
+webMI.addEvent("btn_all_0", "click", function(e) {
+	if (dgs_mode != "비활성화")
+	{
+		return;
+	}
+	
+	check_value = {};	
+	click_cell = null;
+	webMI.gfx.setVisible("shadow_footer", true);
+	
+	for (let row = 1; row <= Total_Axis_Num; row++)
+	{
+		let index = `row${row}_col1`;
+		let addr = addr_list[index] + "_Temp";				//////////// 해당 주소지에 해당하는 Temp 값에 0값 쓰기
+		
+		check_value[index] = 0;
+		webMI.data.write(addr, 0);
+	}
+	
+	Apply_active();								///////////// 적용 버튼 활성화/비활성화///////////
+	Table_Data();							/////////// 테이블 데이터 전시 업데이트/////////////
+});
+
+/////////////전체 최대값 입력/////////////////////////
+webMI.addEvent("btn_all_max", "click", function(e) {
+	if (dgs_mode != "비활성화")
+	{
+		return;
+	}
+	
+	check_value = {};	
+	click_cell = null;
+	webMI.gfx.setVisible("shadow_footer", true);
+	
+	for (let row = 1; row <= Total_Axis_Num; row++)
+	{
+		let index = `row${row}_col1`;
+		let addr = addr_list[index] + "_Temp";
+		let max_val  =maxMapping[row];
+		
+		check_value[index] = max_val;		//////////// 해당 주소지에 해당하는 Temp 값에 최대값 쓰기
+		webMI.data.write(addr, max_val);
+	}
+	
+	Apply_active();								///////////// 적용 버튼 활성화/비활성화///////////
+	Table_Data();							/////////// 테이블 데이터 전시 업데이트/////////////
+});
+
+///////////// 셀 클릭 /////////////////////////////
+function Cell_Click_Event(buttonIds)
+{
+	buttonIds.forEach(buttonId =>
+	{
+		webMI.addEvent(buttonId, "click", function(e)
+		{
+			if (dgs_mode != "비활성화")							////////// 비활성화 상태라면 아무것도 하지 않음
+			{
+				return;
+			}
+
+			Table_Data();							/////////// 테이블 데이터 전시 업데이트/////////////				
+				
+			if(click_cell == buttonId)					/////////// 이전에 클릭한 셀과 현재 클릭한 셀이 같을 경우//////////////
+			{
+				Sing_Dot_Active(false,0);			///////////// +/- , dot 활성화 비활성화
+				webMI.gfx.setVisible("shadow_footer", true);
+				click_cell = null;
+			}
+			else
+			{
+				let col = Number(buttonId.slice(-1));			/////////////// 버튼 ID에서 col값 추출
+				let str = Digit_Count_to_Temp(digitMapping[col],dotMapping[col]);		/////////////// 정수 부분의 갯수, 소수점 부분의 갯수에 따라 글자 리턴//////////////////
+				let text_id = buttonId + "_text_center";							//////////// 해당 클릭 셀의 text id
+				
+				webMI.gfx.setText(text_id, str);						/////////////////  _ _ _ . _ _ 형태로 변경
+				webMI.gfx.setFill(text_id, color.Font_Selected_Data[color_mode]);		//////////// 파란색으로 변경
+				
+				Sing_Dot_Active(signMapping[col], dotMapping[col])		////////////////// 클릭한 셀의 정보에 따라 +/-, 소수점 버튼 활성화/비활성화///////
+				webMI.gfx.setVisible("shadow_footer", false);							/////////// 키패드 활성화
+				
+				click_cell = buttonId;													/////////// 현재 클릭한 셀 저장
+			}
+		});
+	});
+}
+
+//////////////// +/-, dot 활성화/비활성화 ///////////////////
+function Sing_Dot_Active(temp_sign, temp_dot)
+{
+	if (temp_sign)
+	{
+		webMI.trigger.fire("btn_active", "TEST_plus");
+		webMI.trigger.fire("btn_active", "TEST_minus");
+	}
+	else
+	{
+		webMI.trigger.fire("btn_inactive", "TEST_plus");
+		webMI.trigger.fire("btn_inactive", "TEST_minus");
+	}				
+	
+	if (temp_dot != 0)
+	{
+		webMI.trigger.fire("btn_active", "TEST_dot");
+	}
+	else
+	{
+		webMI.trigger.fire("btn_inactive", "TEST_dot");
+	}		
+}
+
+///////////////////////////*  글자수 리턴 함수  *///////////////////////////
+function Digit_Count_to_Temp(digitNum, dotNum)
+{
+	let temp_text = "";
+	
+	for (let i = 0; i <digitNum; i++)
+	{
+		temp_text = temp_text + "_ ";
+	}
+	
+	if (dotNum != 0)
+	{
+		temp_text = temp_text + ". ";
+	}		
+		
+	for (let i = 0; i <dotNum; i++)
+	{
+		temp_text = temp_text + "_ ";
+	}				
+	
+	return temp_text;
+}
+
+///////////////////////////*  숫자 버튼 클릭 이벤트 *///////////////////////////
+function FooterNumber_Click(buttonIds)
+{
+	buttonIds.forEach(buttonId =>
+	{
+		webMI.addEvent(buttonId, "click", function(e)
+		{
+			if (click_cell == null)								/////////// 현제 클릭된 데이터 셀이 없으면 아무것도 하지 않음
+			{
+				return;
+			}		
+		
+			let number = Number(buttonId.slice(-1));				/////////// 입력할 숫자 정보 추출
+			let minus = false;
+			let cell_text_id = click_cell + "_text_center";		/////// 현재 클릭되어 있는 텍스트의 ID
+			let now_data_string = webMI.gfx.getText(cell_text_id);		///////// 현재 입력중인 데이터 값 추출
+			let col = Number(click_cell.slice(-1));			////////// 몇번째 세로줄인지 추출
+			let digit_num = digitMapping[col];		//////// 정수 부분 갯수
+			let dot_num = dotMapping[col];			//////// 소수 부분 갯수
+			
+			if (now_data_string.includes("_"))	//////// 셀을 클릭하고 첫번 째 로 데이터 입력한 것( _ 가 포함됨)이라면 empty 로 시작
+			{
+				now_data_string = "";		///////// empty로 시작
+			}	
+			
+			if (now_data_string.charAt(0) == "-")		//////// 첫번째 글자가 - 라면
+			{
+				now_data_string = now_data_string.replace("-",""); ///////////////// - 제거
+				minus= true;		///////// - 상태 저장
+			}				
+			
+			let dot_none = !now_data_string.includes(".");	/////////// 소수점이 포함되어있는지 확인
+			let str_len = now_data_string.length;			/////////// 글자 수 확인
+			
+			if (dot_none)		///////// 현재 소수점이 없다면
+			{
+				now_data_string = (str_len < digit_num) ? now_data_string + String(number) : now_data_string;		//////// 현재 글자 길이가 정수 부분의 길이부도 작을 때만 숫자 추가
+			}
+			else
+			{
+				let temp_txt = now_data_string.split(".").slice(-1)[0];			//////////// 소수점을 기준으로 나누고 소수점 이후의 글자 추출
+
+				now_data_string = (temp_txt.length < dot_num) ? now_data_string + String(number) : now_data_string;		////////// 소수점 이후의 글자 갯수가 소수점 갯수보다 작을 때만 숫자 추가
+			}
+			
+			now_data_string = minus ? "-" + now_data_string : now_data_string;			////////// -가 포함되어 있었다면 앞에 - 추가
+			webMI.gfx.setText(cell_text_id, now_data_string);						////////////// 텍스트 업데이트
+		});
+	});
+}
+
+FooterNumber_Click(["btn_1","btn_2","btn_3","btn_4","btn_5","btn_6","btn_7","btn_8","btn_9","btn_0"]);
+
+/////////////////////// + 버튼 클릭 ///////////////////////
+webMI.addEvent("btn_plus", "click", function(e) {
+
+	if (click_cell == null)								////// 클릭한 셀이 없으면 아무것도 하지 않음
+	{
+		return;
+	}
+	
+	let col = Number(click_cell.slice(-1));		///////// 현재 클릭되어 있는 셀의 col 값을 추출
+	let sign_active = signMapping[col];			/////////// +/- 유무 확인
+	let cell_text_id = click_cell + "_text_center";		//////////// 클릭한 셀의 text ID
+	let now_data_string = webMI.gfx.getText(cell_text_id);		///////////////////// 현재 입력하고 있는 글자 추출
+			
+	if (!sign_active)									//////////////// +/- 가 필요 없는 셀이라면 아무것도 하지 않음
+	{
+		return;
+	}
+
+	if (now_data_string.charAt(0) == "-")						//////////// 맨앞의 글자가 - 라면
+	{
+		now_data_string = now_data_string.replace("-","");		////////// -를 없앰
+	}
+	else					///// 맨앞의 글자가 -가 아니라면 아무것도 하지않음
+	{
+		return;
+	}
+	
+	webMI.gfx.setText(cell_text_id, now_data_string);		////////// 텍스트 업데이트
+});
+
+/////////////////////// - 버튼 클릭 ///////////////////////
+webMI.addEvent("btn_minus", "click", function(e) {
+
+	if (click_cell == null)				////// 클릭한 셀이 없으면 아무것도 하지 않음
+	{
+		return;
+	}
+	
+	let col = Number(click_cell.slice(-1));				///////// 현재 클릭되어 있는 셀의 col 값을 추출
+	let sign_active = signMapping[col];					/////////// +/- 유무 확인
+	let cell_text_id = click_cell + "_text_center";		//////////// 클릭한 셀의 text ID
+	let now_data_string = webMI.gfx.getText(cell_text_id);		///////////////////// 현재 입력하고 있는 글자 추출
+	
+	if (!sign_active)			//////////////// +/- 가 필요 없는 셀이라면 아무것도 하지 않음
+	{
+		return;
+	}
+	
+	if (now_data_string.includes("_"))		/////////////// 데이터 셀을 클릭하고 처음 값을 입력하는 것( _ 가 포함됨)이라면 현재 글자를 - 로 변경
+	{
+		now_data_string = "-";
+	}
+	else if (now_data_string.charAt(0) != "-")		///////////////// 첫번 째 글자가 - 가 아닌경우 현재 글자 앞에 - 추가
+	{
+		now_data_string = "-" + now_data_string;
+	}
+	
+	webMI.gfx.setText(cell_text_id, now_data_string);						///////// 텍스트 업데이트
+});
+
+///////////////////////// . 버튼 클릭 ///////////////////////
+webMI.addEvent("btn_dot", "click", function(e) {
+
+	if (click_cell == null)									////////////// 클릭한 셀이 없다면 아무것도 하지 않음
+	{
+		return;
+	}
+	
+	let col = Number(click_cell.slice(-1));				///////// 현재 클릭되어 있는 셀의 col 값을 추출
+	let dot_active = dotMapping[col];						//////// 소수점 부분 갯수 추출
+	let cell_text_id = click_cell + "_text_center";		//////////// 클릭한 셀의 text ID
+	let now_data_string = webMI.gfx.getText(cell_text_id);		///////////////////// 현재 입력하고 있는 글자 추출
+
+	if (dot_active == 0 || dot_active == undefined)	///////// 소수점 부분의 갯수가 0 이거나 정의되지 않으면 아무것도 하지 않음
+	{
+		return;
+	}
+
+	if (now_data_string.includes("_"))			/////////////// 데이터 셀을 클릭하고 처음 값을 입력하는 것( _ 가 포함됨)이라면 현재 글자를 0.으로 변경
+	{
+		now_data_string = "0.";
+	}
+	else if (!now_data_string.includes("."))			///////////// 현재 글자에 . 이 포함되지 않았다면
+	{
+		now_data_string = now_data_string + ".";
+	}	
+
+	webMI.gfx.setText(cell_text_id, now_data_string);
+});
+
+////////////////////// 지우기 버튼 클릭 //////////////////////////
+webMI.addEvent("btn_backspace", "click", function(e) {
+
+	if (click_cell == null)			////////////// 클릭한 셀이 없다면 아무것도 하지 않음
+	{
+		return;
+	}
+
+	let col = Number(click_cell.slice(-1));			///////// 현재 클릭되어 있는 셀의 col 값을 추출
+	let cell_text_id = click_cell + "_text_center";			//////////// 클릭한 셀의 text ID
+	let now_data_string = webMI.gfx.getText(cell_text_id);		///////////////////// 현재 입력하고 있는 글자 추출
+
+	if (now_data_string.includes("_"))					/////////////// 데이터 셀을 클릭하고 처음 값을 입력하는 것( _ 가 포함됨)이라면 아무것도 하지 않음
+	{
+		return;
+	}
+	
+	if (now_data_string.length > 0)					///////////// 글자 갯수가 0 초과 시 뒤에 글자 삭제
+	{
+		now_data_string = now_data_string.slice(0, -1);
+	}
+
+	if (now_data_string.length == 0)						/////////////// 글자 갯수가 0 이라면 _ _ _ . _ _ 형태로 초기화
+	{
+		now_data_string = Digit_Count_to_Temp(digitMapping[col],dotMapping[col]);
+	}
+	
+	webMI.gfx.setText(cell_text_id, now_data_string);				/////////// 글자 업데이트
+});
+
+//////////////////////// 초기화 버튼 클릭	///////////////////////////
+webMI.addEvent("btn_reset", "click", function(e) {
+
+	if (click_cell == null)						/////////////////// 현재 클릭한 셀이 없으면 아무것도 하지 않음
+	{
+		return;
+	}
+
+	Cell_Init(click_cell);						////////// 셀 초기화 
+	Apply_active();								////////// 적용 버튼 활성화/ 비활성화
+});
+
+///////////////////  키패드의 확인 버튼 클릭///////////////////////
+webMI.addEvent("btn_check", "click", function(e) {
+
+	if (click_cell == null)				///////////// 현재 클릭한 셀이 없을 경우 아무것도 하지 않음 
+	{
+		return;
+	}
+
+	let col = Number(click_cell.slice(-1));				///////// 현재 클릭되어 있는 셀의 col 값을 추출
+	let cell_text_id = click_cell + "_text_center";			//////////// 클릭한 셀의 text ID
+	let now_data_string = webMI.gfx.getText(cell_text_id);			/////////////// 현재 입력하고 있는 글자 추출
+	
+	let data_index = Page_row_col_index_return(click_cell);	////////////// 현재 클릭한 셀에 대하여 페지이 값을 포함한 rowx_colx 로 반환
+
+	if (now_data_string == "-" || now_data_string.includes("_"))			/////////// 현재 텍스트가 - 만 있거나 데이터 셀을 클릭하고 처음 값을 입력하는 것( _ 가 포함됨)이라면
+	{
+		if (check_value[data_index] != undefined)							///////////// 현재 셀에대한 확인 값이 있다면
+		{
+			click_cell = null;											////////// 현재 클릭한 셀을 초기화
+
+			webMI.gfx.setText(cell_text_id, check_value[data_index]);				//////////// 텍스트를 확인 값으로 변경
+			webMI.gfx.setFill(cell_text_id, color.Green_Active[color_mode]);	/////////// 텍스트 색상 초록색
+			Apply_active();		///////// 적용 버튼 활성화/ 비활성화
+		}
+		else		/////////// 현재 셀에 대한 확인 값이 없으면
+		{
+			Cell_Init(click_cell);		//////// 기존 값으로 셀 초기화
+		}
+		
+		return;
+	}
+	
+	if (now_data_string.slice(-1) == ".")						//////////// 마지막 글자가 . 이라면
+	{
+		now_data_string = now_data_string.slice(0, -1);		/////// . 제거
+	}
+	
+	check_value[data_index] = Number(now_data_string);	//////// 현재 셀에 대한 확인값 저장
+	webMI.data.write(addr_list[data_index] + "_Temp",check_value[data_index]);		////////////// 현재 셀에 대한 데이터 주소의 Temp 값에 확인값 쓰기
+	
+	click_cell = null;			///////////// 현재 클릭한 셀을 초기화
+	
+	webMI.gfx.setVisible("shadow_footer", true);			/////// 키패드 비활성화
+	webMI.gfx.setText(cell_text_id, now_data_string);			//////////// 텍스트 업데이트
+	webMI.gfx.setFill(cell_text_id, color.Green_Active[color_mode]);			////////// 텍스트 색상 초록색
+	Apply_active();				////////////// 적용 버튼 활성화/ 비활성화
+});
+
+/////////////현재 선택된 셀에서 페이지번호를 조합해서 Data index를 찾기 ///////////////////
+function Page_row_col_index_return(cell_id)
+{
+	let temp_row = Number(cell_id.split("_")[0].replace("row",""));
+	let temp_col = Number(cell_id.slice(-1));
+	
+	let data_index = "row" + String(temp_row + (now_page - 1) * Visible_Row_Num) + "_col" + String(temp_col);
+	
+	return data_index;			/////////// 인풋 인자에 대한 셀에 페이지 번호를 포함한 실제 row 셀로 반환
+}
+
+////////////// 선택 초기화////////////////////////////
+function Cell_Init(cell)
+{
+	let cell_text_id = cell + "_text_center";			/////// 현재 선택한 셀의 텍스트 id
+	let data_index = Page_row_col_index_return(cell);		/////////// 인풋 인자에 대한 셀에 페이지 번호를 포함한 실제 row 셀로 반환
+	let col = Number(cell.slice(-1));			///////// 현재 클릭되어 있는 셀의 col 값을 추출
+	
+	delete check_value[data_index];			////////// 인풋 인자로 받은 셀에 대한 확인 값 제거
+	webMI.data.write(addr_list[data_index] + "_Temp", previous_value[data_index]);		//////////// 인풋 인자로 받은 셀에 대한 데이터 주소지의 Temp 값에 이전값 쓰기
+	click_cell = null;
+	
+	webMI.gfx.setText(cell_text_id, previous_value[data_index]);		////////// 텍스트 이전값으로 변경
+
+	if (col == 1 && dgs_mode == "비활성화")				//////// 제어가능한 셀에서는 글자색이 더욱 도드라져야함
+	{
+		webMI.gfx.setFill(cell_text_id, color.Font_Table_Data[color_mode]);	//////// 제어가능한 셀에서는 글자색이 더욱 도드라져야함
+	}
+	else
+	{
+		webMI.gfx.setFill(cell_text_id, color.Font_Default[color_mode]);	//////// 제어 불가능한 셀의 텍스트 색상
+	}	
+	
+	Apply_active();			////////// 적용 버튼 활성화/비활성화
+	webMI.gfx.setVisible("shadow_footer", true);		///////// 키패드 비활성화
+}
+
+///////어플라이 버튼 활성화/비활성화///////////
+function Apply_active()
+{
+	if (Object.keys(check_value).length > 0)					//////////// 확인 값이 한개 이상이면
+	{		
+		webMI.trigger.fire("btn_active", "apply");				///////// 적용 버튼 활성화
+	}
+	else		////// 확인 값이 없을 경우
+	{
+		webMI.trigger.fire("btn_inactive", "apply");			//////////// 적용 버튼 비활성화
+	}	
+}
+
+////////////적용 버튼 클릭///////////////////////
+webMI.addEvent("btn_apply", "click", function(e) {
+
+	if (Object.keys(check_value).length == 0)				////////// 확인 값의 갯수가 0 이면 아무것도 안함
+	{
+		return;
+	}
+	
+	Click_Prevention("open")				////////// 뒤에 클릭 방지 오픈
+	
+	let apply_popup = document.getElementById("apply_popup");			//////// 적용 팝업창  
+	let prevention_level= 2;
+	webMI.trigger.fire("Apply_Popup_prevention_level_Set",prevention_level);	//////// 적용 팝업창에 권한 레벨을 할당, 01.Popup -> Apply_Popup에 함수 있음
+	
+	apply_popup.setAttribute("x", "700");
+	apply_popup.setAttribute("y", "250");
+});
+
+///////////////////////////*  적용 확인 팝업 - 취소 버튼 클릭 이벤트  *///////////////////////////
+/////////01.Popup -> Apply_Popup에 함수 있음
+webMI.trigger.connect("Apply_Popup_Cancel", function(e)
+{
+	Click_Prevention("close")
+	
+	let apply_popup = document.getElementById("apply_popup");  
+
+	apply_popup.setAttribute("x", "0");
+	apply_popup.setAttribute("y", "1000");	// 화면 밖으로
+});
+
+///////////////////////////*  적용 확인 팝업 - 적용 버튼 클릭 이벤트  *///////////////////////////
+////////////////// 적용 팝업창에서 확인을 했다면 호출됨, 01.Popup -> Apply_Popup에 함수 있음
+webMI.trigger.connect("Apply", function(e)
+{
+	for (let cell_id in check_value)	 // 확인 값 찾아오기
+	{
+		previous_value[cell_id] = check_value[cell_id];			//// 이전값에 확인 값을 저장
+	}
+
+	webMI.data.write(apply_addr,1);		////////// apply bit 1 쓰기, HMI에서는 값을 변경시 Temp 값에만 쓰고 apply 시 해당 apply 주소지에 1값을 쓰면 PLC에서 Temp -> 실제 주소지로 값을 씀
+	
+	check_value = {};								////////// 확인값 초기화
+	Apply_active();								//////// 적용 버튼 활성화/비활성화
+	Table_Data();							////////// 테이블 업데이트
+});
+
+/////////////권한 확인////////////////////////////////////////
+function Prevention_Check(prevention_level, callback)
+{
+	webMI.trigger.fire("Prevention_Check", {level : prevention_level, callback : function(access)					/////// Default에 정의되어 있음
+	{
+		if (access == false)
+		{
+			webMI.trigger.fire("Info_Popup_Open", { title : "T{권한}", info : "T{해당 기능에 대한 권한이 없습니다.}" });			////////// 각페이지에 해당 함수있음
+			return;
+		}
+		else
+		{
+			callback();
+		}
+	}});
+}
+
+///////////////////////////*  유저 매뉴얼 버튼 클릭 이벤트 *///////////////////////////
+///////// 00.Main -> Top 에서  호출함
+webMI.trigger.connect("UserManual_Open", function(e)
+{
+	
+	Click_Prevention("open");
+	let time_popup = document.getElementById("user_manual_popup");  
+
+	time_popup.setAttribute("x", "603");		//960 -357 
+	time_popup.setAttribute("y", "20");
+	webMI.trigger.fire("UserManual_Move");
+});
+
+/////////01.Popup -> Manual에서 호출 함
+webMI.trigger.connect("UserManual_Close", function(e)
+{
+	Click_Prevention("close")
+	let time_popup = document.getElementById("user_manual_popup");  
+	time_popup.setAttribute("x", "0");
+	time_popup.setAttribute("y", "1000");	// 화면 밖으로
+});
+
+///// 팝업 오픈 시 뒤에 클릭안되게 하는 화면 열기/닫기
+/////// popup : 오픈여부, parameter : 권한 레벨
+function Click_Prevention(popup, paramter)
+{
+	if (popup == "open")
+	{
+		let shadow = document.getElementById("shadow");  
+		if (paramter == undefined)
+		{
+			webMI.trigger.fire("Prevention_Open");	
+		}
+		else
+		{
+			webMI.trigger.fire("Prevention_Open",paramter);	
+		}
+		
+		shadow.setAttribute("x", "0");
+		shadow.setAttribute("y", "0");
+
+	}
+	else if (popup == "close")
+	{
+		let shadow = document.getElementById("shadow");  
+		webMI.trigger.fire("Prevention_Close");
+		
+		shadow.setAttribute("x", "0");
+		shadow.setAttribute("y", "-1000");	// 화면 밖으로
+
+	}
+}
+
+//////현재 페이지 이외에서 팝업 요청 시 Shadow Visible, Invisible/////////////
+webMI.trigger.connect("Prevention_req",function(e)
+{
+	let parameter = e.value.parameter;
+	parameter = parameter == null ? undefined : parameter; 
+	Click_Prevention(e.value.req, parameter);
+});
+
+//////////////////////////키패드 오픈//////////////////////////////////
+/////// 어디서든 호출 될수 있음
+webMI.trigger.connect("Keyboard_Open", function(e)
+{
+	var type = e.value.type;
+	
+	var options = {};	
+	var max_len = 0;
+	var password_on = false;
+	
+	if (e.value.type == "ID")
+	{
+		max_len =15;
+		password_on =false;
+	}
+	else if(e.value.type == "PW")
+	{
+		max_len = 21;
+		password_on = true;
+	}	
+	
+	options["parameter"] = type;
+	options["max_len"] = max_len;
+	options["password_on"] = password_on;
+	
+	webMI.trigger.fire("keyboard_init", options);
+	
+	let popup = document.getElementById("popup_keyboard");  
+	popup.setAttribute("x", "310");
+	popup.setAttribute("y", "285");	
+});
+	
+////////////////키보드 종료///////////////////////////
+///////// 01.Popup -> keyboard에서 호출함
+webMI.trigger.connect("Keyboard_Close", function(e)
+{
+	let popup = document.getElementById("popup_keyboard");  
+	popup.setAttribute("x", "2000");
+	popup.setAttribute("y", "2000");	
+});
+
+//////////////////////////로그인 팝업창 오픈//////////////////////////////////
+///////// 00.Main -> Top 에서  호출함
+webMI.trigger.connect("Login_Open", function(e)
+{
+	Click_Prevention("open");
+	webMI.trigger.fire("Login_Popup_init");
+	
+	let popup = document.getElementById("login_popup");  
+	popup.setAttribute("x", "602");
+	popup.setAttribute("y", "213");	
+});
+	
+////////////////로그인 팝업창 종료///////////////////////////
+///////// 01.Popup -> Login 에서 호출함
+webMI.trigger.connect("Login_Close", function(e)
+{
+	Click_Prevention("close");
+	
+	let popup = document.getElementById("login_popup");  
+	popup.setAttribute("x", "2000");
+	popup.setAttribute("y", "2000");	
+});
+
+////////////////로그인 팝업창 올리기///////////////////////////
+///////// 01.Popup -> Login 에서 호출함
+webMI.trigger.connect("Login_Popup_Up", function(e)
+{
+	let popup = document.getElementById("login_popup");  
+	popup.setAttribute("y", "20");	
+});
+
+////////////////로그인 팝업창 내리기///////////////////////////
+///////// 01.Popup -> Login 에서 호출함
+webMI.trigger.connect("Login_Popup_Down", function(e)
+{
+	let popup = document.getElementById("login_popup");  
+	popup.setAttribute("y", "213");	
+});
+
+//////////////////////////정보 팝업창 오픈//////////////////////////////////
+////////// 어디서든 호출 될 수 있음
+webMI.trigger.connect("Info_Popup_Open", function(e)
+{
+	Click_Prevention("open");
+	webMI.trigger.fire("Info_Init",e.value);		
+	
+	let popup = document.getElementById("info_popup");  
+	popup.setAttribute("x", "602");
+	popup.setAttribute("y", "213");	
+});
+	
+////////////////정보 팝업창 종료///////////////////////////
+///////// 01.Popup -> Info 에서 호출함
+webMI.trigger.connect("Info_Popup_Close", function(e)
+{
+	Click_Prevention("close");
+	
+	let popup = document.getElementById("info_popup");  
+	popup.setAttribute("x", "2000");
+	popup.setAttribute("y", "2000");	
+});	
