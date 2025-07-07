@@ -1,0 +1,179 @@
+망구성 확인
+
+이더넷 어댑터 이더넷:
+
+   연결별 DNS 접미사. . . . :
+   설명. . . . . . . . . . . . : ASIX USB to Gigabit Ethernet Family Adapter
+   물리적 주소 . . . . . . . . : 00-0E-C6-A3-1D-EF
+   DHCP 사용 . . . . . . . . . : 아니요
+   자동 구성 사용. . . . . . . : 예
+   IPv4 주소 . . . . . . . . . : 172.31.110.178(기본 설정)
+   서브넷 마스크 . . . . . . . : 255.255.252.0
+   IPv4 주소 . . . . . . . . . : 192.168.10.220(기본 설정)
+   서브넷 마스크 . . . . . . . : 255.255.255.0
+   기본 게이트웨이 . . . . . . : 172.31.108.1
+                                 192.168.10.1
+   DNS 서버. . . . . . . . . . : 168.126.63.1
+
+고급 TCP/IP 설정
+IP 주소		서브넷 마스크
+172.31.110.114	255.255.252.0
+192.168.10.220	255.255.255.0
+
+게이트웨이	메트릭
+172.31.108.1	자동
+192.168.10.1	자동
+
+
+서버 접속
+opc.tcp://192.168.10.11:4840
+http://192.168.10.11:8080/
+
+
+Data Sources -> OPC UA 접속 정보 설정 (접속 주소, interval )
+하드웨어 2중화 네트워크 4중화
+Control Req/Res 의 실시간성을 위해서 Control 따로 빼놓음
+
+Displays
+-> Default Main Popup Part Control DrawImage MainDisplay 사용중
+
+Objects
+태그 -> 변수
+정적 타입
+
+1~7번 PLC에서 가져온 태그 (Browse로 확인) (PLC와 HMI의 변수 연동을 할 수 있음)
+
+Alarming
+HMI상 알람을 위한 변수들
+
+History
+트렌드 표시를 위한 기록들
+기간 제한 30일
+sampled, 1초에 한번
+
+Global Parameter
+타입이 없는 변수
+특정 조건에서 쓰기가 잘 안되는 문제가 있음 -> Read 용으로만 쓰길 권장
+Color - Color_List
+larm_and_History 만 사용중
+
+Display Pool
+테스트 용으로만 사용
+
+Library
+Language -> 한영 번역
+Object display -> 기본 도형 모양들 들어가 있음, 잘 안씀 그럼 뭘로 개발?
+
+Quick Dynamics -> 서버에서 실행시켜주는 기능들
+Resources -> index.html 파일 있다.
+
+
+Popup을 모든 화면에 넣어뒀다? -> iframe과 충돌 문제 때문에
+manual에도 iframe 때문에 문제
+
+T{} -> 안의 텍스트는 번역이 된다.
+
+trigger.connect -> 함수를 정의
+trigger.fire -> 함수를 호출
+
+
+코일 값들 (V7, A5, L12)이 동적으로 변경될 수 있으니 해당 값들을 파라미터화 시켜서 변경하기 쉽게 만들어야한다.
+
+태그수 150개 넘으면 안된다. CCD 에러
+
+-----------------------------------
+PLC와 atvise builder 서버와 주소 다름
+
+PLC에서 HMI로 보내주는 데이터 확인
+My Server -> Data Sources -> Browse -> PLC_DATA -> Objects -> Device 로 진입
+원하는 데이터 우클릭 하여 Copy
+사용하길 원하는 경로로 이동하여 우클릭 Paste & mirror
+INPUT , OUTPUT , IN/OUTPUT 에서 주로 IN/OUTPUT 사용
+Structure from data source types 클릭하여 추가
+그 다음 원하는 Display에 드래그 드랍으로 추가
+Parameters
+
+
+AGENT.OBJECTS.Table_Current_Coefficient._current_coeff_induced 추적
+
+------------------------------------
+
+Q)
+* Global Parameters 말고 전역 혹은 상위 스코프에서 변수/함수 선언 안되는지?
+* table 생성 방법이 따로 없는지? -> connect, fire 사용
+* 화면의 요소가 어떤 속성을 가지고 있는지 파악이 안된다. -> 하나씩 클릭하면서 확인
+
+---------------------------------------------------------------------
+TODO)
+* 주요 요소들 먼저 선택해서 id와 어떤 함수들 연결되어 있는지 파악
+* 
+
+---------------------------------------------------------------------
+용어정리)
+gfx - graphics Functions?
+MI - 
+---------------------------------------------------------------------
+화면분석)
+####Setting_Test 화면
+##테이블 요소 파악하기.
+축 tb_title			전류 id_61
+		정격 id_55	최대 id_56	실제 id_57	편차 id_58	전압 id_59
+V1 tb_row1	row1_col1
+...
+V9 tb_row8
+...
+A2 tb_row10							row10_col5
+
+전체0입력 btn_all_0     전체최대값입력 btn_all_max
+적용 btn_apply	< btn_pre_page   01 | 03 text_page   > btn_next_page
+
+
+##키보드 요소 파악하기
+클릭 비활성화용 shadow_footer
+배경 bento3
+숫자 0~9 bnt_숫자
++ btn_plus - btn_minus . btn_dot <= btn_backspace
+초기화 btn_reset 확인 btn_check
+
+Default -> 주석이 많으니 초기 분석에 참고
+Setting_Test -> 여기 알고리즘을 기반으로 많은 페이지들을 만들었으니 초기 분석에 참고
+
+---------------------------------------------------------------------
+기능분석)
+####rootWindow
+EX)
+var iframe= webMI.rootWindow.document.querySelector("#page_main_myframe").contentWindow.document.body;
+
+####webMI.gfx
+EX)
+webMI.gfx.setFill("id_21", '#434343");
+
+####webMI.trigger
+webMI.trigger();
+
+####webMI.data
+
+####webMI.addEvent
+EX)
+WebMI.addEvent("id_21", "click", function() {}
+
+----------------------------------------------
+
+atvise monitor 들어가서
+
+백업
+node.db 복사하기
+
+E Drive에 프로젝트 생성
+Add project -> Name Path 설정
+Poject에서 생성한 프로젝트 선택해서 시작
+기본 id는 root pw 는 없음
+
+만약 해당 경로에 node 파일 있으면 그 프로젝트로 시작. 나머지 파일은 실행시 생성된다.
+
+혹시 에러 없이 비정상적으로 종료되면 용량의 문제일수도 있다. database의 파일들이 용량이 크다.
+
+라이센스
+ProgramFiless->atvise->atviser.lic
+
+원격통제기 -> 라이센스 다른거
