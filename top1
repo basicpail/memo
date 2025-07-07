@@ -1,0 +1,377 @@
+var color = webMI.query["color"];
+
+var dgs_mode;			///소자 모드
+
+///////////////////////////*  주/야간 색상 변경 *///////////////////////////
+var color_mode = localStorage.getItem("Color_Mode");
+Color_Day_Night(color_mode);
+
+webMI.trigger.connect("Color_Mode_Change",function(e)
+{
+	color_mode = e.value;
+	Color_Day_Night(color_mode);
+});
+
+webMI.gfx.setText("lbl_Login", localStorage.getItem("UserLevel"));
+
+function Color_Day_Night(color_mode)
+{
+	webMI.gfx.setFill("back_display", color.Main_Background[color_mode]);
+	webMI.gfx.setFill("back_bento1", color.Top_Bento[color_mode]);
+	webMI.gfx.setFill("back_bento2", color.Top_Bento[color_mode]);
+	webMI.gfx.setFill("back_bento3", color.Top_Bento[color_mode]);
+	webMI.gfx.setFill("back_bento4", color.Top_Bento[color_mode]);
+	
+	webMI.gfx.setFill("back_manual", color.Top_Bento[color_mode]);
+	webMI.gfx.setFill("back_capture", color.Top_Bento[color_mode]);
+	webMI.gfx.setFill("back_login", color.Top_Bento[color_mode]);
+	webMI.gfx.setFill("back_ack", color.Top_Bento[color_mode]);
+	
+	webMI.gfx.setFill("lbl_UTC_text", color.Font_Title[color_mode]);
+	webMI.gfx.setFill("lbl_LT_text", color.Font_Title[color_mode]);
+	webMI.gfx.setFill("lbl_Longitude_text", color.Font_Title[color_mode]);
+	webMI.gfx.setFill("lbl_Latitude_text", color.Font_Title[color_mode]);
+	webMI.gfx.setFill("lbl_Roll_text", color.Font_Title[color_mode]);
+	webMI.gfx.setFill("lbl_Pitch_text", color.Font_Title[color_mode]);
+	webMI.gfx.setFill("lbl_Heading_text", color.Font_Title[color_mode]);	
+	webMI.gfx.setFill("lbl_Depth_text", color.Font_Title[color_mode]);
+	webMI.gfx.setFill("lbl_alarm_text", color.Font_Title[color_mode]);
+	webMI.gfx.setFill("text_Manual", color.Font_Title[color_mode]);
+	webMI.gfx.setFill("text_Capture", color.Font_Title[color_mode]);
+	webMI.gfx.setFill("lbl_Login", color.Font_Title[color_mode]);
+	webMI.gfx.setFill("lbl_ACK", color.Font_Title[color_mode]);			
+	webMI.gfx.setFill("lbl_DegaussingMode_text", color.Font_Title[color_mode]);
+	
+	webMI.gfx.setFill("lbl_title2", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_title", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_UTC", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_LT", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_Longitude", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_Latitude", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_Roll", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_Roll_unit", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_Pitch", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_Pitch_unit", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_Heading", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_Heading_unit", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_Depth", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_Depth_unit", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_DegaussingMode", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_warning", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_alarm", color.Font_Table_Data[color_mode]);
+	webMI.gfx.setFill("lbl_fault", color.Font_Table_Data[color_mode]);
+	
+	for (let i = 1; i <= 5; i++)
+	{
+		webMI.gfx.setStroke("icon_manual" + i, color.Icon_Default[color_mode]);
+	}	
+		
+	webMI.gfx.setFill("icon_capture1", color.Icon_Default[color_mode]);
+	webMI.gfx.setFill("icon_capture2", color.Icon_Default[color_mode]);
+	webMI.gfx.setStroke("icon_capture3", color.Top_Bento[color_mode]);
+	webMI.gfx.setFill("icon_capture3", color.Icon_Default[color_mode]);
+	
+	webMI.gfx.setFill("icon_login1", color.Icon_Default[color_mode]);
+	webMI.gfx.setFill("icon_login2", color.Icon_Default[color_mode]);
+	
+	webMI.gfx.setStroke("icon_ack1", color.Icon_Default[color_mode]);
+	webMI.gfx.setStroke("icon_ack2", color.Icon_Default[color_mode]);
+	
+	webMI.gfx.setFill("icon_warning2", color.Top_Bento[color_mode]);
+	webMI.gfx.setFill("icon_alarm2", color.Top_Bento[color_mode]);
+	webMI.gfx.setFill("icon_fault2", color.Top_Bento[color_mode]);
+}
+
+////////////로그인 변경 시 해당 레벨 전시///////////////
+webMI.trigger.connect("Login_Change", function(e)
+{
+	let temp_level = e.value;
+	
+	temp_level = temp_level == "Level4" ? "Engineer" : temp_level;
+
+	webMI.gfx.setText("lbl_Login",temp_level);
+});
+
+///////////////////주기적으로 현재시간 변경/////////////
+////////////////// 00.Main -> Setting_System 페이지에도 있음//////////
+webMI.trigger.connect("Time_Update",function(e)
+{
+	let d = new Date();
+    
+    let year = String(d.getUTCFullYear()).padStart(2, '0');
+    let month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    let date = String(d.getUTCDate()).padStart(2, '0');
+    let hour = String(d.getUTCHours()).padStart(2, '0');
+    let min = String(d.getUTCMinutes()).padStart(2, '0');    
+    let sec = String(d.getUTCSeconds()).padStart(2, '0');
+
+    webMI.gfx.setText("lbl_UTC", `${year}/${month}/${date} ${hour}:${min}:${sec}`);
+    
+    d.setHours(d.getHours() + 9);
+    
+    year = String(d.getUTCFullYear()).padStart(2, '0');
+    month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    date = String(d.getUTCDate()).padStart(2, '0');
+    hour = String(d.getUTCHours()).padStart(2, '0');
+    min = String(d.getUTCMinutes()).padStart(2, '0');    
+    sec = String(d.getUTCSeconds()).padStart(2, '0');
+    
+    webMI.gfx.setText("lbl_LT", `${year}/${month}/${date} ${hour}:${min}:${sec}`);  
+    
+    setTimeout(() => {webMI.trigger.fire("Time_Update");}, 1000);
+});
+
+webMI.trigger.fire("Time_Update");
+
+///////////////////////////*  화면 제목 변경 *///////////////////////////
+////////////////////////// Default 화면에 SIDE에 버튼(페이지이동) 클릭 시 동작/////////// 
+webMI.trigger.connect("Title_Change",function(e){
+	var page_name = Title_name(e.value);
+
+	webMI.gfx.setText("lbl_title",  page_name);
+	webMI.gfx.setVisible("lbl_title", true);
+});
+
+/////////////////////타이틀 이름 변경///////////////////////////////////////////
+function Title_name(page_name)
+{
+	var title;
+	
+	if (page_name == "Outline") { title = "T{개요}"; }
+	else if (page_name == "DGS") { title = "T{소자}"; }
+	else if (page_name == "CPS") { title = "T{데이터 - 코일 전원 공급기}"; }
+	else if (page_name == "MAG") { title = "T{데이터 - 자기장}"; }
+	else if (page_name == "Probe") { title = "T{데이터 - 3축 자기센서 프로브}"; }
+	else if (page_name == "Function") { title = "T{설정 - 기능}"; }
+	else if (page_name == "System") { title = "T{설정 - 시스템}"; }
+	else if (page_name == "Test") { title = "T{설정 - 테스트}"; }
+	else if (page_name == "IGRF") { title = "T{설정 - IGRF 계수}"; }
+	else if (page_name == "Chart") { title = "T{차트화면}"; }
+	else if (page_name == "MSG") { title = "T{메시지}"; }
+	return title;
+};
+
+///////////////////////////*  ACK 버튼 클릭 이벤트 *///////////////////////////
+
+webMI.addEvent("click_ack", ["click"], function(e) {webMI.trigger.fire("All_Ack");});
+
+///////////////////////////*  ACK 버튼 누를 때 효과  *///////////////////////////
+webMI.addEvent("click_ack", ["mousedown","touchstart"], function(e)
+{
+    webMI.gfx.setFill("back_ack", color.Btn_Background_Down[color_mode]);
+});
+
+
+webMI.addEvent("click_ack", ["mouseup","touchend", "mouseout"], function(e)
+{
+    webMI.gfx.setFill("back_ack", color.Top_Bento[color_mode]);
+});
+
+///////////////////////////*  경도 구독 *///////////////////////////
+
+webMI.data.subscribe("AGENT.OBJECTS.03_ALGOR..Longitude", function(e)
+{
+	let value = e.value;
+	
+	let str = DecimalToDMS(value);	
+	
+	let degrees = String(str.degrees);
+	let minutes =String(str.minutes).padStart(2, '0');
+	let seconds = String(str.seconds).padStart(2, '0');
+
+	let display = `${degrees}° ${minutes}' ${seconds}"`;
+
+	if (value < 0)
+	{
+		webMI.gfx.setText("lbl_Longitude_text", "T{경도(서)}");
+	}
+	else
+	{
+		webMI.gfx.setText("lbl_Longitude_text", "T{경도(동)}");
+	}
+
+	webMI.gfx.setText("lbl_Longitude", display.replace("-",""));
+});
+
+
+///////////////////////////*  위도 구독 *///////////////////////////
+
+webMI.data.subscribe("AGENT.OBJECTS.03_ALGOR..Latitude", function(e)
+{
+	let value = e.value;
+	
+	let str = DecimalToDMS(value);	
+	
+	let degrees = String(str.degrees);
+	let minutes =String(str.minutes).padStart(2, '0');
+	let seconds = String(str.seconds).padStart(2, '0');
+
+	let display = `${degrees}° ${minutes}' ${seconds}"`;
+
+	if (value < 0)
+	{
+		webMI.gfx.setText("lbl_Latitude_text", "T{위도(남)}");
+	}
+	else
+	{
+		webMI.gfx.setText("lbl_Latitude_text", "T{위도(북)}");
+	}
+
+	webMI.gfx.setText("lbl_Latitude", display.replace("-",""));
+});
+
+///////// 경도/위도 도, 분, 초 분리/////////////////
+function DecimalToDMS(decimal) {
+  const degrees = Math.floor(decimal);
+  const minutesFull = (decimal - degrees) * 60;
+  const minutes = Math.floor(minutesFull);
+  const seconds = ((minutesFull - minutes) * 60).toFixed(2);
+
+  return {
+    degrees,
+    minutes,
+    seconds: parseFloat(seconds)
+  };
+}
+
+///////////////////////////*  횡경사각 구독 *///////////////////////////
+
+webMI.data.subscribe("AGENT.OBJECTS.03_ALGOR..Roll", function(e)
+{
+	let value = parseFloat(e.value.toFixed(2)); // 소수점 2자리까지
+	webMI.gfx.setText("lbl_Roll", value.toFixed(2));
+});
+
+
+///////////////////////////*  종경사각 구독 *///////////////////////////
+
+webMI.data.subscribe("AGENT.OBJECTS.03_ALGOR..Pitch", function(e)
+{
+	let value = parseFloat(e.value.toFixed(2)); // 소수점 2자리까지
+	webMI.gfx.setText("lbl_Pitch", value.toFixed(2));
+});
+
+
+///////////////////////////*  방위각 구독 *///////////////////////////
+
+webMI.data.subscribe("AGENT.OBJECTS.03_ALGOR..Heading", function(e)
+{
+	let value = parseFloat(e.value.toFixed(2)); // 소수점 2자리까지
+	webMI.gfx.setText("lbl_Heading", value.toFixed(2));
+});
+
+
+///////////////////////////*  심도 구독 *///////////////////////////
+
+webMI.data.subscribe("AGENT.OBJECTS.03_ALGOR..Depth", function(e)
+{
+	let value = parseFloat(e.value.toFixed(1)); // 소수점 1자리까지
+	webMI.gfx.setText("lbl_Depth", value.toFixed(1));
+});
+
+
+///////////////////////////*  소자 모드 구독  *///////////////////////////
+
+webMI.data.subscribe("AGENT.OBJECTS.Control._DGM", function(e)
+{
+	if (e.value == 2)
+	{
+		dgs_mode = "T{자동 모드}";
+	}
+	else if (e.value == 1)
+	{
+		dgs_mode = "T{수동 모드}";
+	}
+	else if (e.value == 3)
+	{
+		dgs_mode = "T{비활성화}";
+	}
+	
+	webMI.gfx.setText("lbl_DegaussingMode", dgs_mode);
+});
+
+//////////////////스크린샷/////////////////////////////////
+webMI.addEvent("click_capture", "click", function(e) {
+
+	webMI.rootWindow.startLoading(0,0,1920,1080);	// 로딩 오버레이
+	
+	let title = webMI.gfx.getText("lbl_title");
+	let capture_type = title == "T{차트화면}" ? 2 : 1;
+	
+	setTimeout(() => {webMI.rootWindow.Screenshot({},capture_type);},10);				///////// Library -> ATVISE -> Resources -> index.htm안에 정의되어있음
+});
+
+///////////////////////////*  캡쳐 버튼 누를 때 효과  *///////////////////////////
+webMI.addEvent("click_capture", ["mousedown","touchstart"], function(e)
+{
+    webMI.gfx.setFill("back_capture", color.Btn_Background_Down[color_mode]);
+});
+
+webMI.addEvent("click_capture", ["mouseup","touchend", "mouseout"], function(e)
+{
+    webMI.gfx.setFill("back_capture", color.Top_Bento[color_mode]);
+});
+
+// 알람 갯수 라벨 수정
+/// Default 페이지에 Alarm_Count()함 수에서 호출함
+webMI.trigger.connect("Alarm_Label_Update", function(e)
+{	
+	webMI.gfx.setText("lbl_warning", String(localStorage.getItem("warning_num")).padStart(2, '0'));
+	webMI.gfx.setText("lbl_alarm", String(localStorage.getItem("alarm_num")).padStart(2, '0'));
+	webMI.gfx.setText("lbl_fault", String(localStorage.getItem("fault_num")).padStart(2, '0'));
+});
+
+///// 유저 매뉴얼 팝업 오픈
+webMI.addEvent("click_manual", "click", function(e) {
+	webMI.trigger.fire("UserManual_Open");
+});
+
+///////////////////////////*  메뉴얼 버튼 누를 때 효과  *///////////////////////////
+webMI.addEvent("click_manual", ["mousedown","touchstart"], function(e)
+{
+    webMI.gfx.setFill("back_manual", color.Btn_Background_Down[color_mode]);
+});
+
+webMI.addEvent("click_manual", ["mouseup","touchend", "mouseout"], function(e)
+{
+    webMI.gfx.setFill("back_manual", color.Top_Bento[color_mode]);
+});
+
+////// 로그인 팝업창 오픈 
+webMI.addEvent("click_login", "click", function(e) {
+	webMI.trigger.fire("Login_Open");
+});
+
+///////////////////////////*  로그인 버튼 누를 때 효과  *///////////////////////////
+webMI.addEvent("click_login", ["mousedown","touchstart"], function(e)
+{
+    webMI.gfx.setFill("back_login", color.Btn_Background_Down[color_mode]);
+});
+
+
+webMI.addEvent("click_login", ["mouseup","touchend", "mouseout"], function(e)
+{
+     webMI.gfx.setFill("back_login", color.Top_Bento[color_mode]);
+});
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+var bl = false;
+webMI.addEvent("back_display", "click", function(e) {
+	var color_mode1;
+
+	if (bl)
+	{
+		color_mode1 = "Day";
+	}
+	else
+	{
+		color_mode1 = "Night";
+	}
+		
+		bl = !bl;
+	
+	webMI.trigger.fire("Color_Mode_Change", color_mode1);
+	localStorage.setItem("Color_Mode", color_mode1);
+	webMI.trigger.fire("Event_Add", "@Thema Change@ : @Day@");			/////Default에 정의되어있음
+});
+
