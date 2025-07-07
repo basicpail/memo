@@ -1,0 +1,1974 @@
+///////////////////////// 현재 페이지에 표 부분의 헤더 부분(축 오른 쪽에 있는 헤더)는 탭 종류(3가지)가 겹쳐 져있음
+///////////////////////// 현재 페이지에 키패드 입력하는 부분은 전류 계수, 상태 정보 에 해당하는 키패드가 개별 그룹으로 두개 겹쳐져 있음
+////////////////////////  previousValues, checkValues, data_addr_map의 각 셀의 값들은 tb_rowx_colx_tab_pageNum 형태로 저장됨 x = index, tab = 현재 탭, pageNum = 현재 페이지 번호 
+//////////////////////// nowClicked_cell, preClicked_cell 은 tb_rowx_colx 형태로 저장됨 x = index
+/////////////////////// 현재 페이지에 전류 계수 탭에 있는 모든 데이터와 상태정보에 있는 첫번 째 데이터는 모두 값을 입력가능하고, 다른 데이터는 항시 전시만 함
+
+var color = webMI.query["color"];
+
+////////////Default 페이지에서 값을 지정함//////////////////////
+const V_Axis_Num = Number(localStorage.getItem("V_Axis_Num"));
+const A_Axis_Num = Number(localStorage.getItem("A_Axis_Num"));
+const L_Axis_Num = Number(localStorage.getItem("L_Axis_Num"));
+const Total_Axis_Num = V_Axis_Num + A_Axis_Num + L_Axis_Num;
+
+///////////한 페이지에서 최대로 볼수 있는 Row 갯수//////////////
+const Visible_Row_Num = 10;
+
+////////// 셀의 태그 주소//////////////
+var data_addr_map = {};
+
+////////// 페이지 최대 갯수
+const Page_Max = Math.ceil(Total_Axis_Num / Visible_Row_Num);
+
+/////// 현재 탭
+var now_tab = "전류 계수";
+
+///// 현재 탭 + 페이지 넘버
+var now_page = "coeff_1";	
+let preClicked_cell = null;	// 이전 선택 셀
+let nowClicked_cell = null; // 현재 선택 셀
+
+let previousValues = {};  // 이전 값 저장
+let checkValues = {};		// 확인 값 저장
+
+var subscriptions = [];	// 구독 리스트
+
+///////////// 각탭에 따른 col의 데이터 끝부분 들
+var coeffTypeMapping = { 1: "Permanent", 2: "Induced", 3: "Eddy" };
+var curTypeMapping = { 1: "Permanent", 2: "induced", 3: "Eddy", 4: "Use", 5: "Reserve", 6: "Sum" };
+var statusTypeMapping = {1 : "Active", 2 : "Active", 3 :  "WA_AL_FA", 4 : "FA" };	//3번은 나중에 다시 나눔
+
+////////// 상정태 보 탭의 PSU 상태 값
+var statusPSU_Warning = {};
+var statusPSU_Alarm = {};
+var statusPSU_Fault = {};
+
+///////// 코일의 상태 값
+var coil_State = {};
+
+/////  상정태 보 탭의 선택된 버튼
+let select_axis = "all";
+
+//////// 전류계수, 상태정보따에 따른 적용 데이터 주소 
+var apply_addr = {"전류 계수" : "AGENT.OBJECTS.03_ALGOR..Apply_Current_Coeff", "상태정보" : "AGENT.OBJECTS.03_ALGOR..Apply_PSU_Status"};
+
+/////////// Row에 해당하는 축이름 지정///////
+////////// ex) 1 : V1, 2 : V2 ....... 9 : A1 .....등
+var rowMapping ={};
+
+for (let i = 1; i <= V_Axis_Num; i++)
+{
+	rowMapping[i] = "V" + i;
+}
+
+for (let i = 1; i <= A_Axis_Num; i++)
+{
+	rowMapping[i + V_Axis_Num] = "A" + i;
+}
+
+for (let i = 1; i <= L_Axis_Num; i++)
+{
+	rowMapping[i + V_Axis_Num + A_Axis_Num] = "L" + i;
+}
+
+////////////////자동 로그아웃에 대하여 터치시 카운트를 초기화 시키는 기능 ///////////////////////////
+var iframe= webMI.rootWindow.document.querySelector("#page_main_myframe").contentWindow.document.body;
+
+iframe.addEventListener("click", () => {
+  localStorage.setItem("NoTouchCount",0);
+});   
+
+///////////////////잠수함 그림의 코일 Fault 체크///////////////////////
+Coil_Error_Status();
+
+/////////////////적용버튼 비활성화/////////////////////////////////
+webMI.trigger.fire("btn_inactive", "PSU_apply");
+
+/////////////////day, night 모드에 따른 색상 데이터////////////////////
+var color_Font_Table_Data;
+var color_Selected;
+var color_Btn_Title_Down;
+var color_Font_Selected_Title;
+var color_Table_Title;
+var color_Font_Default;
+var color_Table_Cell_Background_Control;
+var color_Table_Cell_Background_Monitoring;
+var color_Main_Background;
+var color_Bento;
+var color_Green_Active;
+var color_Font_Selected_Data;
+var color_Table_Cell_Background_Red;
+var color_Table_Border;
+
+///////////////////////// 전류 계수 초기 데이터 맵 맵핑/////////////////////////////////
+for (let index_row = 1; index_row <= Total_Axis_Num; index_row++)		///////////모든 축에 대하여 반복
+{
+	for (let index_col = 1; index_col <= 3; index_col++)				/// 전류 계수 탭의 3개의 col에 대하여 반복
+	{
+		let coeffType = coeffTypeMapping[index_col];																						//////// 전류계수의 데이터 주소의 끝 부분
+		let coil_name = rowMapping[index_row] != undefined ? rowMapping[index_row] : null;			//////// 코일 축 정보 V1 ~ 
+		let now_page_temp = "coeff_" + Math.floor((index_row - 1) / Visible_Row_Num + 1);				//////// 현재 셀 정보 + 페이지 정보
+		let row_temp = index_row % Visible_Row_Num;																				
+		row_temp = row_temp == 0 ? Visible_Row_Num : row_temp;														//////// 계산중인 row에서 페이지를 번호에 대한 index를 뺀 row 번호		
+		
+		let cell_id = `tb_row${row_temp}_col${index_col}`;		
+		let cell_id_page = cell_id + '_' + now_page_temp;	// 현재 페이지 포함 셀 아이디
+		
+		data_addr_map[cell_id_page] = `AGENT.OBJECTS.03_ALGOR..PSU_${coil_name}.Current_Coeff_${coeffType}`;
+	}
+}
+
+///////////////////////// 전류 초기 데이터 맵 맵핑/////////////////////////////////
+for (let index_row = 1; index_row <= Total_Axis_Num; index_row++)			///////////모든 축에 대하여 반복
+{
+	for (let index_col = 1; index_col <= 6; index_col++)			// 전류 탭의 6개의 col에 대하여 반복
+	{
+		let curType = curTypeMapping[index_col];																						//////// 전류의 데이터 주소의 끝 부분
+		let coil_name = rowMapping[index_row] != undefined ? rowMapping[index_row] : null;		/////// 코일 축 정보 V1 ~ 
+			
+		let now_page_temp = "cur_" + Math.floor((index_row - 1) / Visible_Row_Num + 1);			//////// 현재 셀 정보 + 페이지 정보
+		let row_temp = index_row % Visible_Row_Num;
+		row_temp = row_temp == 0 ? Visible_Row_Num : row_temp;													//////// 계산중인 row에서 페이지를 번호에 대한 index를 뺀 row 번호
+		
+		let cell_id = `tb_row${row_temp}_col${index_col}`;		
+		let cell_id_page = cell_id + '_' + now_page_temp;	// 현재 페이지 포함 셀 아이디
+	
+		data_addr_map[cell_id_page] = `AGENT.OBJECTS.03_ALGOR..PSU_${coil_name}.Current_${curType}`;
+	}
+}
+
+///////////////////////// 상태정보 초기 데이터 맵 맵핑/////////////////////////////////
+for (let index_row = 1; index_row <= Total_Axis_Num; index_row++)			///////////모든 축에 대하여 반복
+{
+	for (let index_col = 1; index_col <= 4; index_col++)				// 상태정보 탭의 4개의 col에 대하여 반복
+	{
+		let statusType = statusTypeMapping[index_col];																			//////// 상태정보의 데이터 주소의 끝 부분
+		let coil_name = rowMapping[index_row] != undefined ? rowMapping[index_row] : null;		/////// 코일 축 정보 V1 ~ 
+			
+		let now_page_temp = "status_" + Math.floor((index_row - 1) / Visible_Row_Num + 1);		//////// 현재 셀 정보 + 페이지 정보
+		let row_temp = index_row % Visible_Row_Num;
+		row_temp = row_temp == 0 ? Visible_Row_Num : row_temp;													//////// 계산중인 row에서 페이지를 번호에 대한 index를 뺀 row 번호
+		
+		let cell_id = `tb_row${row_temp}_col${index_col}`;		
+		let cell_id_page = cell_id + '_' + now_page_temp;	// 현재 페이지 포함 셀 아이디
+	
+		data_addr_map[cell_id_page] = index_col == 4 ? `AGENT.OBJECTS.03_ALGOR..Coil_${coil_name}.${statusType}` : `AGENT.OBJECTS.03_ALGOR..PSU_${coil_name}.${statusType}`;
+	}
+}
+
+///////////////////////////*  주/야간 색상 변경 *///////////////////////////
+var color_mode = localStorage.getItem("Color_Mode");
+Color_Day_Night(color_mode);
+
+webMI.trigger.connect("Color_Mode_Change",function(e)
+{
+	color_mode = e.value;
+	Color_Day_Night(color_mode);
+});
+
+function Color_Day_Night(color_mode)
+{
+	color_Font_Table_Data = color.Font_Table_Data[color_mode];
+	color_Selected = color.Selected[color_mode];
+	color_Btn_Title_Down = color.Btn_Title_Down[color_mode];
+	color_Font_Selected_Title = color.Font_Selected_Title[color_mode];
+	color_Table_Title = color.Table_Title[color_mode];
+	color_Font_Default = color.Font_Default[color_mode];
+	color_Table_Cell_Background_Control = color.Table_Cell_Background_Control[color_mode];
+	color_Table_Cell_Background_Monitoring = color.Table_Cell_Background_Monitoring[color_mode];
+	color_Main_Background = color.Main_Background[color_mode];
+	color_Bento = color.Bento[color_mode];
+	color_Green_Active = color.Green_Active[color_mode];
+	color_Font_Selected_Data = color.Font_Selected_Data[color_mode];
+	color_Table_Cell_Background_Red = color.Table_Cell_Background_Red[color_mode];
+	color_Table_Border = color.Table_Border[color_mode];
+	
+	webMI.gfx.setStroke("line_1", color.Under_Line[color_mode]);	
+	
+	webMI.gfx.setFill("background_display", color_Main_Background);
+	webMI.gfx.setFill("bento_1", color_Bento);
+	webMI.gfx.setFill("bento_2", color_Bento);
+	webMI.gfx.setFill("bento_3", color_Bento);
+	webMI.gfx.setFill("bento_4", color_Bento);
+	webMI.gfx.setFill("bento_5", color_Bento);
+
+	webMI.gfx.setFill("text_page", color_Font_Default);
+
+	webMI.gfx.setFill("lbl_Vcoil", color_Font_Default);
+	webMI.gfx.setFill("lbl_Acoil", color_Font_Default);
+	webMI.gfx.setFill("lbl_Lcoil", color_Font_Default);	
+	
+	webMI.gfx.setFill("text_current_coefficient", color_Font_Default);
+	webMI.gfx.setFill("text_current", color_Font_Default);
+	webMI.gfx.setFill("text_status", color_Font_Default);	
+	
+	webMI.gfx.setFill("table_header", color_Table_Title);	
+	webMI.gfx.setStroke("table_header", color.Table_Border[color_mode]);	
+	
+	webMI.gfx.setFill("table_header",color_Table_Title);	
+	
+	var opacity = {Day : 0.8, Night : 0.4};	
+	webMI.gfx.setFill("footer_shadow",color.Shadow[color_mode]);
+	
+	webMI.gfx.setFillOpacity("footer_shadow",opacity[color_mode]);	
+	
+	for (let i = 1; i <= Total_Axis_Num; i++)
+	{
+		let coil_num = rowMapping[i];
+		webMI.gfx.setFill("lbl_" + coil_num, color_Font_Default);	
+		webMI.gfx.setFill("pic_coil_" + coil_num + "_red", color.Purple[color_mode]);	
+
+		if (coil_num.substring(0, 1) == "A")														//A코일은 그룹이라서 해당코드로 색상변경
+		{
+			let rec = document.getElementById("pic_coil_" + coil_num);		
+			let rec_line = rec.querySelectorAll("*");
+			rec_line.forEach(line => 
+			{
+				webMI.gfx.setStroke(line.id, color.Font_Title[color_mode]);
+			});
+		}
+		else
+		{
+			webMI.gfx.setStroke("pic_coil_" + coil_num, color.Font_Title[color_mode]);
+		}
+	}
+	
+	///////////////////////////*  초기 설정(전류 계수 탭) *///////////////////////////
+
+	webMI.gfx.setStroke("btn_coefficient_background", color_Selected);		// 선택된 버튼 테두리 색상 파랑(페이지 로드 시 초기 선택 : 전류 계수 탭)
+	webMI.gfx.setFill("btn_coefficient_background", color_Btn_Title_Down); // 선택된 버튼 내부 색상 회색(페이지 로드 시 초기 선택 : 전류 계수 탭)
+	webMI.gfx.setFill("text_current_coefficient", color_Font_Selected_Title);
+	
+	Change_Tab(1);
+	PageData_coeff(1);
+	Change_page_number();
+}
+
+//////////////////셀 초기화///////////////////////////
+function Cell_Init(cell_name, back_color)
+{
+		webMI.gfx.setText(cell_name + "_text_center", "");
+
+		webMI.gfx.setFill(cell_name + "_background", back_color);
+		
+		if (now_tab == "전류 계수" || (now_tab == "상태정보" && cell_name.slice(-1) == "1"))				///////////// 감시 데이터와 제어 데이터를 구분하여 폰트 색상 변경
+		{
+			webMI.gfx.setFill(cell_name + "_text_center", color_Font_Table_Data);				// 폰트 색상 기본
+		}
+		else
+		{
+			webMI.gfx.setFill(cell_name + "_text_center", color_Font_Default);				// 폰트 색상 기본
+		}
+}
+
+///////////////////////////*  탭 버튼 클릭 이벤트 *///////////////////////////
+
+webMI.addEvent("btn_current_coefficient", "click", function(e)
+{
+	Change_Tab(1);
+	PageData_coeff(1);
+	Change_page_number();
+});
+
+
+webMI.addEvent("btn_current", "click", function(e)
+{
+	Change_Tab(2);
+	PageData_cur(1);
+	Change_page_number();
+});
+
+
+webMI.addEvent("btn_status", "click", function(e)
+{
+	Change_Tab(3);
+	PageData_status(1);
+	Change_page_number();
+});
+
+///////////////////////////*  페이지별 데이터 함수 *///////////////////////////
+
+function PageData_coeff(page)	// 전류 계수
+{
+	Change_Table_First_Col(page);		// 테이블 첫 열 텍스트
+	
+	// 헤더 및 하단 버튼 변경
+	header_coeff_visible();									//////////// 전류계수 헤더 보이기
+	header_current_hidden();								//////////// 전류 헤더 숨기기
+	header_status_hidden();								/////////// 상태정보 헤더 숨기기
+	footer_coeff_visible();										/////////// 전류계수 키패드 보이기
+	footer_status_hidden();									//////////// 상태정보 키패드 숨기기
+	footer_shadow_visible();								//////////// 키패드 비활성화
+
+	for (let row = 1; row <= Total_Axis_Num; row++)				///////////모든 축에 대하여 반복
+	{
+		for (let col = 1; col <= 6; col++)	// 열 개수 3개
+		{
+			let row_index = row - (page - 1) * Visible_Row_Num;		//////// 페이지 번호를 포함한 row번호
+			let text = `tb_row${row_index}_col${col}_text_center`;		//////// 페이지 번호를 포함한 셀의 text id
+			let now_page_temp = "coeff_" + Math.floor((row-1) / Visible_Row_Num + 1);	//////// 현재 탭과 현재 반복되고 있는 row를 기준으로 탭 + 페이지 번호
+			let row_temp = row % Visible_Row_Num;																	
+			row_temp = row_temp == 0 ? Visible_Row_Num : row_temp;								/////// 현재 반복되고 있는 row에서 페이지 번호를 제외한 row값
+					
+			let cell_id = `tb_row${row_temp}_col${col}`;
+			let cell_id_page = cell_id + '_' + now_page_temp;	// 현재 페이지 포함 셀 아이디
+			
+			//////색상 및 텍스트 초기화////////////////////////////
+			if (row <= Visible_Row_Num)
+			{
+				Cell_Init("tb_row" + row + "_col" + col, color_Table_Cell_Background_Control);
+			}
+			
+			if (col <= 3 && data_addr_map[cell_id_page] != undefined)
+			{
+				webMI.data.read(data_addr_map[cell_id_page], function(e)
+				{
+					let preValue = e.value;
+
+					if (typeof preValue === "number")
+					{
+						preValue = parseFloat(preValue.toFixed(2)); // 소수점 2자리까지
+					}
+						
+					previousValues[cell_id_page] = preValue;     // 처음 읽어온 값을 이전 값으로 저장(탭/페이지 번호 포함)
+					
+					if (checkValues[cell_id_page] != undefined)
+					{
+						webMI.gfx.setText(text, checkValues[cell_id_page]);	// 확인 값 있는 경우 확인 값 전시
+						webMI.gfx.setFill(text, color_Green_Active);
+						webMI.data.write(data_addr_map[cell_id_page] + "_Temp", Number(checkValues[cell_id_page]));	
+					}
+					else
+					{
+						webMI.gfx.setText(text, preValue);	// 확인 값 없는 경우 읽어온 값 전시
+						webMI.data.write(data_addr_map[cell_id_page] + "_Temp", preValue);	
+					}
+					
+				});
+			}			
+		}
+	}
+}
+
+function PageData_cur(page)		// 전류
+{
+	Change_Table_First_Col(page);		// 테이블 첫 열 텍스트
+
+	// 헤더 및 하단 버튼 변경
+	header_coeff_hidden();
+	header_current_visible();
+	header_status_hidden();
+	footer_coeff_visible();
+	footer_status_hidden();
+	footer_shadow_visible();
+
+	let coil_name;
+	checkValues = {};
+	
+	for (let row = 1; row <= Visible_Row_Num; row++)	// 행 개수 10개
+	{
+		for (let col = 1; col <= 6; col++)	// 열 개수 6개
+		{
+			let cell_id = `tb_row${row}_col${col}`;
+			let text = cell_id + `_text_center`;
+			let row_index = row + (page - 1) * Visible_Row_Num;
+
+			let back_color = (page == 3) && (row > 5) ? color_Table_Cell_Background_Control : color_Table_Cell_Background_Monitoring;
+			let cell_id_page = cell_id + "_" + now_page;
+			//////색상 및 텍스트 초기화////////////////////////////
+			Cell_Init(cell_id, back_color);
+			
+			if (data_addr_map[cell_id_page] != undefined)
+			{
+				let subId = webMI.data.subscribe(data_addr_map[cell_id_page], function(e)
+				{
+					let value = 0;
+					
+					if (typeof e.value === "number")
+					{
+						value = parseFloat(e.value.toFixed(2)); // 소수점 2자리까지 표시
+					}
+					
+					webMI.gfx.setText(text, value); 
+				});
+				
+				subscriptions.push(subId); // 구독 ID 저장
+			}
+		}
+	}
+}
+
+
+function PageData_status(page)	// 상태정보
+{
+	Change_Table_First_Col(page);		// 테이블 첫 열 텍스트
+	
+	// 헤더 및 하단 버튼 변경
+	header_coeff_hidden();
+	header_current_hidden();
+	header_status_visible();
+	footer_coeff_hidden();
+	footer_status_visible();
+	footer_shadow_hidden();
+	footer_status_inactive();
+	
+	psu_state_data = {};	
+	
+	for (let row = 1; row <= Total_Axis_Num; row++)
+	{
+		for (let col = 1; col <= 6; col++)	// 열 개수 3개
+		{
+			let row_index = row - (page - 1) * Visible_Row_Num;
+			let text = `tb_row${row_index}_col${col}_text_center`;
+			let now_page_temp = "status_" + Math.floor((row-1) / Visible_Row_Num + 1);
+			let row_temp = row % Visible_Row_Num;
+			row_temp = row_temp == 0 ? Visible_Row_Num : row_temp;
+			
+			let cell_id = `tb_row${row_temp}_col${col}`;
+			let cell_id_page = cell_id + '_' + now_page_temp;	// 현재 페이지 포함 셀 아이디
+			
+			let data_addr = data_addr_map[cell_id_page];			
+			let back_color = ((page == 3) && (row > 5)) ||  ((col < 2) || (col > 4))
+				? color_Table_Cell_Background_Control : color_Table_Cell_Background_Monitoring;
+				
+			//////색상 및 텍스트 초기화////////////////////////////
+			if (row <= Visible_Row_Num)
+			{
+				Cell_Init("tb_row" + row + "_col" + col, back_color);
+			}
+			
+			if (data_addr != undefined)
+			{
+				if (col == 1)										
+				{
+					webMI.data.read(data_addr, function (e) 
+					{
+						let active_state = e.value;
+						
+						let status_data = active_state == false ? "T{비활성화}" : "T{활성화}";
+	
+						previousValues[cell_id_page] = status_data;
+						
+						if (checkValues[cell_id_page] != undefined)
+						{
+							webMI.gfx.setText(text, checkValues[cell_id_page]);	// 확인 값 있는 경우 확인 값 전시
+							webMI.gfx.setFill(text, color_Green_Active);
+							
+							if(checkValues[cell_id_page] == "T{비활성화}")
+							{
+								webMI.data.write(data_addr_map[cell_id_page] + "_Temp", 0);	
+							}
+							else if (checkValues[cell_id_page] == "T{활성화}")
+							{
+								webMI.data.write(data_addr_map[cell_id_page] + "_Temp", 1);	
+							}
+						}
+						else
+						{
+							webMI.gfx.setText(text, status_data);	// 확인 값 없는 경우 읽어온 값 전시
+							webMI.data.write(data_addr_map[cell_id_page] + "_Temp", active_state);	
+						}
+					});
+				}
+				else if (col == 2)
+				{
+					if (row_index >= 1 && row_index <= Visible_Row_Num)
+					{
+						let subId = webMI.data.subscribe(data_addr, function (e)			
+						{
+							let active_state = e.value;
+							
+							let status_data = active_state == false ? "T{비활성화}" : "T{활성화}";
+							
+							webMI.trigger.fire("background_normal", "Active_state" + row_index);
+		
+							webMI.gfx.setText(text, status_data);					
+						});
+						
+						subscriptions.push(subId); // 구독 ID 저장
+					}				
+				}
+				else if (col == 3)
+				{
+					if (row_index >= 1 && row_index <= Visible_Row_Num)
+					{
+						var temp_type = statusTypeMapping[col].split("_");
+						let temp_addr =data_addr.replace(statusTypeMapping[col],"");
+						
+						data_addr = temp_addr + temp_type[0];
+
+						let subId = webMI.data.subscribe(data_addr, function (e)
+						{
+							statusPSU_Warning[row] = e.value;
+							PSU_State_Text_and_Color_of_State_Tap(text, row_index, row);
+						});
+						
+						subscriptions.push(subId); // 구독 ID 저장			
+						
+						/*
+						data_addr = temp_addr + temp_type[1];
+						subId = webMI.data.subscribe(data_addr, function (e)
+						{
+							statusPSU_Alarm[row] = e.value;
+							PSU_State_Text_and_Color_of_State_Tap(text, row_index, row);
+						});
+						
+						subscriptions.push(subId); // 구독 ID 저장
+						*/
+						
+						data_addr = temp_addr + temp_type[2];
+						
+						subId = webMI.data.subscribe(data_addr, function (e)
+						{
+							statusPSU_Fault[row] = e.value;
+							PSU_State_Text_and_Color_of_State_Tap(text, row_index, row);
+						});
+						
+						subscriptions.push(subId); // 구독 ID 저장				
+					}
+				}
+				else if (col == 4)
+				{
+					if (row_index >= 1 && row_index <= Visible_Row_Num)
+					{					
+						Coil_State_Text_and_Color_of_State_Tap(text, row_index)
+					}
+				}	
+			}	
+		}
+	}
+}
+
+/////////////상태정보 탭의 코일 상태 데이터의 글자 및 배경색 지정///////////////////
+function Coil_State_Text_and_Color_of_State_Tap(text_target, row_num)
+{
+	let page_num = Number(now_page.slice(-1));
+	let row_data_index = row_num + (page_num -1) * Visible_Row_Num;
+	let coil_name = rowMapping[row_data_index];	
+
+	var state_error = coil_State[coil_name];
+
+	let back_color_target = state_error == false ?  "background_normal" : "background_purple";
+	var status_data = state_error == false ? "T{정상}" : "T{고장}";
+	webMI.trigger.fire(back_color_target, "coil_error" + row_num);
+
+	webMI.gfx.setText(text_target, status_data);
+	
+	if (state_error)
+	{
+		webMI.gfx.setFill(text_target, color.Black[color_mode]);
+	}
+	else
+	{
+		webMI.gfx.setFill(text_target, color_Font_Default);
+	}	
+}
+
+////////////상태정보 탭의 PSU 상태 데이터의 글자 및  배경색 지정//////////////////////////
+function PSU_State_Text_and_Color_of_State_Tap(text_target, row_index, data_index)
+{
+	if (statusPSU_Fault[data_index] > 0)
+	{
+		webMI.trigger.fire("background_purple", "PSU_error" + row_index);
+		webMI.gfx.setText(text_target, "T{고장}");
+		webMI.gfx.setFill(text_target, color.Black[color_mode]);
+	}
+	else if(statusPSU_Alarm[data_index] > 0)
+	{
+		webMI.trigger.fire("background_alarm", "PSU_error" + row_index);
+		webMI.gfx.setText(text_target, "T{경보}");
+		webMI.gfx.setFill(text_target, color.Black[color_mode]);
+	}							
+	else if(statusPSU_Warning[data_index] > 0)
+	{
+		webMI.trigger.fire("background_yellow", "PSU_error" + row_index);
+		webMI.gfx.setText(text_target, "T{경고}");
+		webMI.gfx.setFill(text_target, color.Black[color_mode]);
+	}
+	else
+	{
+		webMI.trigger.fire("background_normal", "PSU_error" + row_index);
+		webMI.gfx.setText(text_target, "T{정상}");
+		webMI.gfx.setFill(text_target, color_Font_Default);
+	}			
+}
+
+///////////////////////////*  코일/PSU 고장 상태 관련 함수 *///////////////////////////
+
+function Coil_Error_Status()
+{
+	for (let row = 1; row <= Object.keys(rowMapping).length; row++)
+	{
+		let coil_name = rowMapping[row];													// 행에 맞게 코일 이름 가져오기
+		let data_addr_coil_error = `AGENT.OBJECTS.03_ALGOR..Coil_${coil_name}.FA`;
+		let pic_name = `pic_coil_${coil_name}_red`;																		// 코일 그림 이름
+
+		webMI.data.subscribe(data_addr_coil_error, function (e)
+		{
+			coil_State[coil_name] = e.value;		
+		
+			if (coil_State[coil_name])		// 코일 상태 = 고장
+			{
+				document.getElementById(pic_name).style.visibility = "visible";	 // 코일 그림 색상 변경(빨강)
+			}
+			else		// 코일 상태 = 정상
+			{
+				document.getElementById(pic_name).style.visibility = "hidden"; // 코일 그림 색상 변경(기본)
+			}
+			
+			if (now_tab != "상태정보")
+			{
+				return;
+			}			
+			
+			let page_num = Number(now_page.slice(-1));
+			let text_box_row = row - (page_num -1) * Visible_Row_Num;			
+			
+			if (text_box_row >= 1 && text_box_row <= Visible_Row_Num)
+			{
+				let text_target = `tb_row${text_box_row}_col4_text_center`;
+				Coil_State_Text_and_Color_of_State_Tap(text_target, text_box_row)
+			}
+		});
+	}
+}
+
+///////////////////////////*  테이블 첫 열(축) 텍스트 변경  *///////////////////////////
+
+function Change_Table_First_Col(now_page)
+{
+	for (let row = 1; row <= Visible_Row_Num; row++)
+	{
+		let col_name = rowMapping[row + (now_page - 1) * Visible_Row_Num];
+		
+		if (col_name != undefined)
+		{
+			webMI.gfx.setText("tb_row" + row + "_text_center", col_name);
+		}
+		else
+		{
+			webMI.gfx.setText("tb_row" + row + "_text_center", "");
+		}
+	}
+}
+
+//////////////현재 클릭된 셀 초기화///////////////////////
+function Cliked_Cell_Init()
+{
+	var nowClicked_cell_page = nowClicked_cell + '_' + now_page;
+	var now_text = nowClicked_cell + "_text_center";
+	
+	if (checkValues[nowClicked_cell_page])	// 확인 값이 있는 경우
+	{
+		webMI.gfx.setText(now_text, checkValues[nowClicked_cell_page]);	// 다시 눌러도 확인 값 전시
+		webMI.gfx.setFill(now_text, color_Green_Active);
+	}
+	else
+	{
+		webMI.gfx.setText(now_text, previousValues[nowClicked_cell_page]);
+		
+		if (now_tab == "전류 계수" || (now_tab == "상태정보" && nowClicked_cell.slice(-1) == "1"))
+		{
+			webMI.gfx.setFill(now_text, color_Font_Table_Data);				// 폰트 색상 기본
+		}
+		else
+		{
+			webMI.gfx.setFill(now_text, color_Font_Default);				// 폰트 색상 기본
+		}
+	}
+	
+	nowClicked_cell = null;
+	
+	if (now_tab == "전류 계수")
+	{
+		footer_shadow_visible();
+	}
+	else if(now_tab == "상태정보")
+	{
+		footer_status_inactive();
+	}
+}
+
+///////////////////////////*  셀 클릭 이벤트 *///////////////////////////
+
+function CellClickEvents(cell_ids)
+{
+	cell_ids.forEach(cell_id =>
+	{
+		webMI.addEvent(cell_id, "click", function(e)
+		{
+			var temp_prevention_level =2;
+			
+			let target = e.target;	// 현재 선택 셀
+			
+			let now_content = webMI.gfx.getText(extractBaseId(target.id)  + "_text_center" );
+			let now_background_color = webMI.gfx.getFill(extractBaseId(target.id) + "_background");
+			
+			if (now_content == "" || now_tab =="전류" || now_background_color != color_Table_Cell_Background_Control )
+			{
+				return;
+			}			
+			
+			Prevention_Check(temp_prevention_level, () => {
+				
+				nowClicked_cell = extractBaseId(target.id);  // 현재 선택된 셀(tb) 이름
+				
+				if (now_tab == "전류 계수")
+				{
+					footer_shadow_visible();
+				}
+				else if(now_tab == "상태정보")
+				{
+					footer_status_inactive();
+				}
+
+				let now_text = nowClicked_cell + "_text_center";
+				let pre_text = preClicked_cell + "_text_center";
+				
+				let nowClicked_cell_page = nowClicked_cell + '_' + now_page;
+				
+				if (preClicked_cell == nowClicked_cell)	// 이전에 클릭한 셀을 다시 클릭하는 경우
+				{	
+					Cliked_Cell_Init();
+				}
+				else	// 이전에 클릭한 셀과 다른 셀을 클릭하는 경우
+				{
+					let preClicked_cell_page = preClicked_cell + '_' + now_page;
+					
+					if (checkValues[preClicked_cell_page] != undefined)
+					{
+						webMI.gfx.setText(pre_text, checkValues[preClicked_cell_page]);		// 확인 값으로
+						webMI.gfx.setFill(pre_text, color_Green_Active);
+					}
+					else
+					{
+						webMI.gfx.setText(pre_text, previousValues[preClicked_cell_page]);	// 이전 값으로
+						webMI.gfx.setFill(pre_text, color_Font_Table_Data);			// 폰트 색상 기본
+					}
+					
+					webMI.gfx.setFill(now_text, color_Font_Selected_Data);	// 폰트 색 파랑
+					
+					if (now_tab == "전류 계수")
+					{
+						footer_shadow_hidden();
+						webMI.gfx.setText(now_text, '_ _ _ . _ _');								// 선택 시 텍스트
+					}
+					else if(now_tab == "상태정보")
+					{
+						footer_status_active();
+						
+						if (now_content == "T{활성화}")
+						{
+							webMI.trigger.fire("btn_lamp_on", "PSU_active");
+							webMI.trigger.fire("btn_lamp_off", "PSU_inactive");
+						}
+						else if (now_content == "T{비활성화}")
+						{
+							webMI.trigger.fire("btn_lamp_off", "PSU_active");
+							webMI.trigger.fire("btn_lamp_on", "PSU_inactive");
+						}
+					}					
+				}
+				
+				preClicked_cell = nowClicked_cell;  // 마지막 클릭 셀 업데이트
+			});
+		});
+	});
+}
+
+function extractBaseId(id)	// 셀 id 자르기
+{
+    const match = id.match(/(tb_row\d+_col\d+)/);
+    return match ? match[1] : null;
+}
+
+const cell_ids = [];	// 버튼 id 생성
+
+for (let row = 1; row <= Visible_Row_Num; row++)
+{
+    for (let col = 1; col <= 6; col++)
+    {
+        cell_ids.push(`tb_row${row}_col${col}`);
+    }
+}
+
+CellClickEvents(cell_ids);
+
+
+///////////////////////////*  탭 전환 함수 *///////////////////////////
+
+function Change_Tab(tab)
+{
+	subscriptions.forEach(id => webMI.data.unsubscribe(id));
+	subscriptions = []; // 구독 취소
+	
+	nowClicked_cell = null; // 셀 선택된 채로 페이지 이동 시 선택 취소
+	
+	checkValues = {};	// 확인 값 초기화
+	previousValues = {};	// 이전 값 초기화
+	
+	switch(tab)
+	{
+		case 1:
+			webMI.gfx.setStroke("btn_coefficient_background", color_Selected);
+			webMI.gfx.setFill("btn_coefficient_background", color_Btn_Title_Down);
+			webMI.gfx.setFill("text_current_coefficient", color_Font_Selected_Title);
+			
+			webMI.gfx.setStroke("btn_current_background", color_Table_Title);
+			webMI.gfx.setFill("btn_current_background", color_Table_Title);
+			webMI.gfx.setFill("text_current", color_Font_Default);
+			
+			webMI.gfx.setStroke("btn_status_background", color_Table_Title);
+			webMI.gfx.setFill("btn_status_background", color_Table_Title);
+			webMI.gfx.setFill("text_status", color_Font_Default);
+			
+			webMI.trigger.fire("btn_active", "PSU_data");
+			webMI.trigger.fire("btn_inactive", "PSU_apply");
+			
+			now_tab = "전류 계수";
+			now_page = "coeff_1";
+			break;
+		case 2:
+			webMI.gfx.setStroke("btn_coefficient_background", color_Table_Title);
+			webMI.gfx.setFill("btn_coefficient_background", color_Table_Title);	
+			webMI.gfx.setFill("text_current_coefficient", color_Font_Default);
+			
+			webMI.gfx.setStroke("btn_current_background", color_Selected);
+			webMI.gfx.setFill("btn_current_background", color_Btn_Title_Down);
+			webMI.gfx.setFill("text_current", color_Font_Selected_Title);
+			
+			webMI.gfx.setStroke("btn_status_background", color_Table_Title);
+			webMI.gfx.setFill("btn_status_background", color_Table_Title);
+			webMI.gfx.setFill("text_status", color_Font_Default);
+			
+			webMI.trigger.fire("btn_inactive", "PSU_data");
+			webMI.trigger.fire("btn_inactive", "PSU_apply");
+			
+			now_tab = "전류";
+			now_page = "cur_1";
+			break;
+		case 3:
+			webMI.gfx.setStroke("btn_coefficient_background", color_Table_Title);
+			webMI.gfx.setFill("btn_coefficient_background", color_Table_Title);
+			webMI.gfx.setFill("text_current_coefficient", color_Font_Default);
+			
+			webMI.gfx.setStroke("btn_current_background", color_Table_Title);
+			webMI.gfx.setFill("btn_current_background", color_Table_Title);
+			webMI.gfx.setFill("text_current", color_Font_Default);
+			
+			webMI.gfx.setStroke("btn_status_background", color_Selected);
+			webMI.gfx.setFill("btn_status_background", color_Btn_Title_Down);
+			webMI.gfx.setFill("text_status", color_Font_Selected_Title);
+			
+			webMI.trigger.fire("btn_active", "PSU_data");
+			webMI.trigger.fire("btn_inactive", "PSU_apply");
+			
+			now_tab = "상태정보";
+			now_page = "status_1";
+			select_axis = "all";
+			Select_Btn_Lamp_Set(select_axis);
+			break;
+	}
+}
+
+/////////////선택된 축에 대한 버튼 램프 활성화/비활성화/////////////
+function Select_Btn_Lamp_Set(axis)
+{
+	Select_Axis_Btn_ID.forEach(id => {
+		if (id.split("_").slice(-1)[0] != axis)
+		{
+			webMI.trigger.fire("btn_lamp_off", id.replace("btn_",""));
+		}
+		else
+		{
+			webMI.trigger.fire("btn_lamp_on", "select_" + axis);
+		}
+	});
+}
+
+//////////////////// 상태정보 페이지에 All, V, A, L 버튼 클릭 이벤트////////////////////////////////
+let Select_Axis_Btn_ID = ["btn_select_all", "btn_select_V", "btn_select_A", "btn_select_L"];
+Select_Axis_Btn_Click(Select_Axis_Btn_ID);
+
+function Select_Axis_Btn_Click(buttonIds)
+{
+	buttonIds.forEach(buttonId =>
+	{
+		webMI.addEvent(buttonId, "click", function(e)
+		{
+			let axis  = buttonId.split("_").slice(-1)[0];
+				
+			select_axis = axis;
+			Select_Btn_Lamp_Set(select_axis);
+		});
+	});
+}
+
+
+///////////////////////////*  페이지 버튼 클릭 이벤트 *///////////////////////////
+
+webMI.addEvent("btn_next_page", "click", function(e)
+{
+	var now_page_num = Number(now_page.split("_").slice(-1)[0]);
+	var now_page_type = now_page.split("_")[0];
+
+	if (now_page_num >= Page_Max)
+	{
+		return;
+	}
+	
+	now_page_num++;
+
+	subscriptions.forEach(id => webMI.data.unsubscribe(id));
+	subscriptions = []; // 구독 취소
+	
+	nowClicked_cell = null;
+	
+	now_page = now_page_type + "_" + now_page_num;
+
+	if (now_page_type == "coeff")
+	{
+		PageData_coeff(now_page_num);
+	}
+	else if (now_page_type == "cur")
+	{
+		PageData_cur(now_page_num);
+	}
+	else if (now_page_type == "status")
+	{
+		PageData_status(now_page_num);
+	}
+	
+	Change_page_number();
+});
+
+
+webMI.addEvent("btn_pre_page", "click", function(e)
+{
+	var now_page_num = Number(now_page.split("_").slice(-1)[0]);
+	var now_page_type = now_page.split("_")[0];
+
+	if (now_page_num <= 1)
+	{
+		return;
+	}
+	
+	now_page_num--;
+
+	subscriptions.forEach(id => webMI.data.unsubscribe(id));
+	subscriptions = []; // 구독 취소
+	
+	nowClicked_cell = null;
+	
+	now_page = now_page_type + "_" + now_page_num;
+
+	if (now_page_type == "coeff")
+	{
+		PageData_coeff(now_page_num);
+	}
+	else if (now_page_type == "cur")
+	{
+		PageData_cur(now_page_num);
+	}
+	else if (now_page_type == "status")
+	{
+		PageData_status(now_page_num);
+	}
+	
+	Change_page_number();
+});
+
+
+///////////////////////////*  전류 계수 footer 버튼 클릭 이벤트 *///////////////////////////
+
+function FooterButtonClickEvents_coeff(buttonIds)
+{
+	buttonIds.forEach(buttonId =>
+	{
+		webMI.addEvent(buttonId, "click", function(e)
+		{
+			let clickedButton = e.target.id.replace('btn_', '').replace('_btn_click', '');
+			let now_text = nowClicked_cell + "_text_center";
+			let now_content = webMI.gfx.getText(now_text);
+			let nowClicked_cell_page = nowClicked_cell + '_' + now_page;
+			
+			if (nowClicked_cell != null)	// 클릭된 셀이 있는 경우
+			{
+				if (clickedButton >= 0) // 숫자 버튼
+				{
+					if (now_content == '_ _ _ . _ _')
+					{
+						now_content = '';
+						webMI.gfx.setText(now_text, now_content);
+					}
+				
+					var split_str = now_content.split('.');
+				
+					if (split_str.length == 2) // 소수점 있는 경우
+					{
+						if (split_str[1].length <= 1) // 소수점 이하 한 자릿수까지 입력
+						{
+							now_content += clickedButton;
+							webMI.gfx.setText(now_text, now_content);
+						}
+					}
+					else
+					{
+						var sign = now_content.slice(0, 1);
+				
+						if (sign == '-')	// 음수일 경우 정수 부분이 '-' 포함 4자리까지 입력
+						{
+							if (split_str[0].length <= 3) {
+								now_content += clickedButton;
+								webMI.gfx.setText(now_text, now_content);
+							}
+						}
+						else	// 양수일 경우 정수 부분이 3자리까지 입력
+						{
+							if (split_str[0].length <= 2)
+							{
+								if (now_content == "0")	// 05 -> 5
+								{
+									now_content = clickedButton;
+								}
+								else
+								{
+									now_content += clickedButton;
+								}
+								
+								webMI.gfx.setText(now_text, now_content);
+							}
+						}
+					}
+				}
+
+				else if (clickedButton == "plus")	// + 버튼
+				{
+					if (now_content[0] == '-')
+					{
+						now_content = now_content.substring(1);  // 첫 글자 제거 후 다시 저장
+						webMI.gfx.setText(now_text, now_content);  // 업데이트된 값 설정
+						
+						if (now_content.length === 0)
+						{
+							webMI.gfx.setText(now_text, '_ _ _ . _ _');
+						}
+					}
+				}
+				else if (clickedButton == "minus")	// - 버튼
+				{
+					if (now_content[0] != '-')
+					{
+						if (now_content == '_ _ _ . _ _')
+						{
+							now_content = '';
+							webMI.gfx.setText(now_text, now_content);
+						}
+						webMI.gfx.setText(now_text, '-' + now_content);
+					}
+				}
+				else if (clickedButton == "dot")	// . 버튼
+				{
+					if (now_content == '_ _ _ . _ _')
+					{
+						now_content = '0';
+					}
+					
+					if (!now_content.includes('.'))
+					{
+						if(now_content == '-')
+						{
+							now_content = '-0';
+						}
+						webMI.gfx.setText(now_text, now_content + '.');
+					}
+				}
+				else if (clickedButton == "backspace")		// 백스페이스 버튼
+				{
+					if (now_content != '_ _ _ . _ _')
+					{
+						now_content = now_content.slice(0, -1);
+						webMI.gfx.setText(now_text, now_content);
+					}
+					if (now_content == '')
+					{
+						now_content = '_ _ _ . _ _';
+						webMI.gfx.setText(now_text, now_content);
+					}
+				}
+				else if (clickedButton == "reset_coeff")		// 초기화 버튼
+				{
+					var temp_prevention_level =2;
+						Prevention_Check(temp_prevention_level, () => {
+						webMI.gfx.setText(now_text, previousValues[nowClicked_cell_page]);	// 이전 값으로 변경
+						webMI.gfx.setFill(now_text, color_Font_Table_Data);	// 텍스트 색상 원래대로
+						nowClicked_cell = null;
+						preClicked_cell = null;
+						footer_shadow_visible();
+						
+						delete checkValues[nowClicked_cell_page];
+						
+						webMI.data.write(data_addr_map[nowClicked_cell_page] + "_Temp", Number(previousValues[nowClicked_cell_page]));						
+						
+						if (Object.keys(checkValues).length == 0)
+						{
+							webMI.trigger.fire("btn_inactive", "PSU_apply");
+						}			
+					});
+				}
+				else if (clickedButton == "check")	// 확인 버튼
+				{
+					var temp_prevention_level =2;
+					Prevention_Check(temp_prevention_level, () => {
+						if (nowClicked_cell == null)
+						{
+							return;
+						}
+							
+						if (now_content == '_ _ _ . _ _')		// 아무것도 쓰지 않고 확인 버튼 누르는 경우 이전 값
+						{
+							now_content = previousValues[nowClicked_cell_page];
+						}
+						else if (now_content.slice(-1) == '.')
+						{
+							now_content = now_content.slice(0, -1);
+						}
+							
+						webMI.gfx.setText(now_text, now_content);
+						checkValues[nowClicked_cell_page] = now_content;	// 확인 값 저장
+						
+						///Temp 주소에 체크값 쓰기
+						webMI.data.write(data_addr_map[nowClicked_cell_page] + "_Temp", now_content);	
+	
+						webMI.gfx.setFill(now_text, color_Green_Active);	// 텍스트 확인 색상
+	
+						nowClicked_cell = null;
+						preClicked_cell = null;
+						footer_shadow_visible();
+						
+						webMI.trigger.fire("btn_active", "PSU_apply");
+					});
+				 }
+			}
+			
+			if (clickedButton == "data")
+			{
+				var temp_prevention_level =2;
+				Prevention_Check(temp_prevention_level, () => {
+					if (now_tab == "전류 계수")
+					{
+						webMI.trigger.fire("File_Popup_Open", {"data_title" : "T{전류 계수}", "data_name" : "CPSU_Coeff"});
+					}
+					else if (now_tab == "상태정보")
+					{
+						webMI.trigger.fire("File_Popup_Open", {"data_title" : "T{상태정보}", "data_name" : "CPSU_State"});
+					}
+				});
+			}
+		});
+	});
+}
+
+webMI.trigger.connect("File_Select_Done", function(e){
+
+	var temp_prevention_level =2;
+	Prevention_Check(temp_prevention_level, () => {
+		let options = {};
+	
+		options["row_header"] = rowMapping;				
+		options["path"] = e.value.path;	
+		
+		if (e.value.title == "전류 계수")
+		{
+			options["col_header"] = coeffTypeMapping;
+			options["name"] = "CPSU_Coeff";
+			options["type"] = "coeff";
+			
+			//Library -> ATVISE -> Resources -> index.htm 파일에 함수 있음
+			webMI.rootWindow.CSV_Data_Load(options,function(error, data_list)		
+			{
+				if (error)
+				{
+					webMI.trigger.fire("Info_Popup_Open", { title : "T{오류}", info : "T{잘못된 파일입니다.}" });
+				}
+				else
+				{
+					checkValues = data_list;
+					nowClicked_cell = null;
+					preClicked_cell = null;
+					PageData_coeff(Number(now_page.slice(-1)));
+					webMI.trigger.fire("btn_active", "PSU_apply");
+					webMI.trigger.fire("Event_Add", "@Data File Read@ : @PSU@ @Page@ - @Current Coeff.@");			/////Default에 정의되어있음
+				}
+			});
+			
+		}
+		else if (e.value.title == "상태정보")
+		{
+			options["col_header"] = { 1: "Active_State"};
+			options["name"] = "CPSU_State";
+			options["type"] = "status";
+			
+			//Library -> ATVISE -> Resources -> index.htm 파일에 함수 있음
+			webMI.rootWindow.CSV_Data_Load(options, function(error, data_list) 
+			{
+				if (error)
+				{
+					webMI.trigger.fire("Info_Popup_Open", { title : "T{오류}", info : "T{잘못된 파일입니다.}" });
+				}
+				else
+				{
+					checkValues = data_list;
+					nowClicked_cell = null;
+					preClicked_cell = null;
+					
+					Object.keys(checkValues).forEach(key_name => {
+						if (checkValues[key_name] == 1)
+						{
+							checkValues[key_name] = "T{활성화}";
+						}
+						else
+						{
+							checkValues[key_name] = "T{비활성화}";
+						}
+					});							
+					
+					PageData_status(Number(now_page.slice(-1)));
+					webMI.trigger.fire("btn_active", "PSU_apply");	
+					webMI.trigger.fire("Event_Add", "@Data File Read@ : @PSU@ @Page@ - @Status Info@");			/////Default에 정의되어있음
+				}			
+			});
+		}		
+	});
+});
+
+FooterButtonClickEvents_coeff(["btn_1", "btn_2", "btn_3", "btn_4", "btn_5", "btn_6", "btn_7", "btn_8", "btn_9", "btn_0", "btn_plus", "btn_minus", "btn_dot", "btn_backspace", "btn_reset_coeff", "btn_check", "btn_data"]);
+
+
+///////////////////////////*  적용 버튼 클릭 이벤트 *///////////////////////////
+
+webMI.addEvent("btn_apply", "click", function(e)
+{
+	if (Object.keys(checkValues).length > 0)	 // 확인한 값이 하나 이상 있을 경우만 적용 확인 팝업 띄우기
+	{
+		var temp_prevention_level =2;
+		Prevention_Check(temp_prevention_level, () => {
+			if (now_tab == "전류 계수")
+			{
+				webMI.gfx.setText("apply_popup_lbl_title", "T{전류 계수 변경}");
+			}
+			else if (now_tab == "상태정보")
+			{
+				webMI.gfx.setText("apply_popup_lbl_title", "T{상태정보 변경}");
+			}	
+		
+			Popup_Open();
+		});
+	}
+});
+
+
+///////////////////////////*  적용 확인 팝업 열기  *///////////////////////////
+
+function Popup_Open()
+{
+	Click_Prevention("open")
+	
+	let apply_popup = document.getElementById("apply_popup");  
+	let prevention_level= 2;
+	webMI.trigger.fire("Apply_Popup_prevention_level_Set",prevention_level);				///Apply 팝업창에 Apply 가능 권한 레벨 할당
+	
+	apply_popup.setAttribute("x", "700");
+	apply_popup.setAttribute("y", "250");
+}
+
+
+///////////////////////////*  적용 확인 팝업 - 적용 버튼 클릭 이벤트  *///////////////////////////
+
+webMI.trigger.connect("Apply", function(e)
+{
+	for (let cell_id_page in checkValues)	 // 확인 값 찾아오기
+	{
+		let value = checkValues[cell_id_page];
+		previousValues[cell_id_page] = value;	// 적용된 값을 이전 값으로 업데이트(탭/페이지 번호 포함)
+	}
+	
+	for (let row = 1; row <= Visible_Row_Num; row++)	// 행 개수 10개
+	{
+		for (let col = 1; col <= 6; col++)	// 열 개수 6개
+		{
+			let text = `tb_row${row}_col${col}_text_center`;
+
+			if (now_tab == "전류 계수" || (now_tab == "상태정보" && col == 1))
+			{
+				webMI.gfx.setFill(text, color_Font_Table_Data);				// 폰트 색상 기본
+			}
+			else
+			{
+				webMI.gfx.setFill(text, color_Font_Default);				// 폰트 색상 기본
+			}
+		}
+	}
+	
+	let temp_row_header = rowMapping;
+	let temp_col_header;
+	let temp_name;
+	
+	if (now_tab == "전류 계수")					
+	{
+		temp_col_header = coeffTypeMapping;
+		temp_name = "CPSU_Coeff";
+	}
+	else if (now_tab == "상태정보")
+	{
+		temp_col_header = { 1: "Active_State"};
+		temp_name = "CPSU_State";
+	}	
+	
+	webMI.rootWindow.Save_Settings_to_Excel(temp_row_header, temp_col_header, previousValues,temp_name);	
+	
+	if (now_tab == "전류 계수")				//수정 필 어드레스
+	{
+		webMI.trigger.fire("Event_Add", "@Data Change@ : @PSU@ - @Current Coeff.@");			/////Default에 정의되어있음
+	}
+	else if (now_tab == "상태정보")
+	{
+		webMI.trigger.fire("Event_Add", "@Data Change@ : @PSU@ - @Status Info@");			/////Default에 정의되어있음
+	}	
+	
+	webMI.data.write(apply_addr[now_tab], 1);	
+	
+	checkValues = {};
+	webMI.trigger.fire("Apply_Popup_Cancel");
+	webMI.trigger.fire("btn_inactive", "PSU_apply");
+});
+
+
+///////////////////////////*  적용 확인 팝업 - 취소 버튼 클릭 이벤트  *///////////////////////////
+
+webMI.trigger.connect("Apply_Popup_Cancel", function(e)
+{
+	Click_Prevention("close")
+	
+	let apply_popup = document.getElementById("apply_popup");  
+
+	apply_popup.setAttribute("x", "0");
+	apply_popup.setAttribute("y", "1000");	// 화면 밖으로
+});
+
+
+///// 팝업 오픈 시 뒤에 클릭안되게 하는 화면 열기/닫기
+function Click_Prevention(popup, paramter)
+{
+	if (popup == "open")
+	{
+		let shadow = document.getElementById("shadow");  
+		if (paramter == undefined)
+		{
+			webMI.trigger.fire("Prevention_Open");	
+		}
+		else
+		{
+			webMI.trigger.fire("Prevention_Open",paramter);	
+		}
+		
+		shadow.setAttribute("x", "0");
+		shadow.setAttribute("y", "0");
+
+	}
+	else if (popup == "close")
+	{
+		let shadow = document.getElementById("shadow");  
+		webMI.trigger.fire("Prevention_Close");
+		
+		shadow.setAttribute("x", "0");
+		shadow.setAttribute("y", "-1000");	// 화면 밖으로
+
+	}
+}
+
+//////현재 페이지 이외에서 팝업 요청 시 Shadow Visible, Invisible/////////////
+webMI.trigger.connect("Prevention_req",function(e)
+{
+	let parameter = e.value.parameter;
+	parameter = parameter == null ? undefined : parameter; 
+	Click_Prevention(e.value.req, parameter);
+});
+
+
+///////////////////////////*  페이지 쪽수 표시 *///////////////////////////
+
+function Change_page_number()
+{
+	let page_num = Number(now_page.split("_").slice(-1)[0]);
+
+	if (page_num <= 1)
+	{
+		webMI.trigger.fire("btn_inactive", "pre_page");
+		webMI.trigger.fire("btn_active", "next_page");	
+	}
+	else if (page_num < Page_Max)
+	{
+		webMI.trigger.fire("btn_active", "pre_page");
+		webMI.trigger.fire("btn_active", "next_page");	
+	}
+	else
+	{
+		webMI.trigger.fire("btn_active", "pre_page");
+		webMI.trigger.fire("btn_inactive", "next_page");	
+	}
+
+	webMI.gfx.setText("text_page", String(page_num).padStart(2, '0') + " | " + String(Page_Max).padStart(2, '0') );
+}
+
+
+///////////////////////////*  전류 계수 / 전류 / 상태정보 header 및 footer visibility *///////////////////////////
+
+function header_coeff_hidden() {
+	webMI.gfx.setVisible("header_coeff", false); // 기본적으로 요소 숨김
+
+	const current_coeff_element_h = document.getElementById("header_coeff"); // HTML DOM 요소 가져오기
+
+	if (current_coeff_element_h) {
+		const children1 = current_coeff_element_h.querySelectorAll("*"); // 모든 하위 요소 선택
+		children1.forEach(child1 => {
+			child1.style.visibility = "hidden"; // 하위 요소 숨김
+			child1.style.display = "none"; // 공간 차지 제거
+		});
+	}
+ }
+ 
+ function header_coeff_visible() {
+	webMI.gfx.setVisible("header_coeff", true);
+
+	const current_coeff_element_v = document.getElementById("header_coeff");
+
+	if (current_coeff_element_v) {
+		const children2 = current_coeff_element_v.querySelectorAll("*");
+		children2.forEach(child2 => {
+			child2.style.visibility = "visible";
+			child2.style.display = "block";
+		});
+	}
+ }
+
+
+function header_current_hidden() {
+	webMI.gfx.setVisible("header_current", false);
+	
+	const current_element_h = document.getElementById("header_current");	
+	
+	if (current_element_h) {
+		const children3 = current_element_h.querySelectorAll("*");
+		children3.forEach(child3 => {
+			child3.style.visibility = "hidden";
+			child3.style.display = "none";
+		});
+	}
+}
+
+function header_current_visible() {
+	webMI.gfx.setVisible("header_current", true);
+	
+	const current_element_v = document.getElementById("header_current");		
+	
+	if (current_element_v) {
+		const children4 = current_element_v.querySelectorAll("*");
+		children4.forEach(child4 => {
+			child4.style.visibility = "visible";
+			child4.style.display = "block";
+		});
+	}
+}
+
+function header_status_hidden() {
+	webMI.gfx.setVisible("header_status", false);
+	
+	const status_element_h = document.getElementById("header_status");
+	
+	if (status_element_h) {
+		const children5 = status_element_h.querySelectorAll("*");
+		children5.forEach(child5 => {
+			child5.style.visibility = "hidden";
+			child5.style.display = "none";
+		});
+	}
+}
+
+function header_status_visible() {
+	webMI.gfx.setVisible("header_status", true);
+	
+	const status_element_v = document.getElementById("header_status");
+	
+	if (status_element_v) {
+		const children6 = status_element_v.querySelectorAll("*");
+		children6.forEach(child6 => {
+			child6.style.visibility = "visible";
+			child6.style.display = "block";
+		});
+	}
+}
+
+function footer_coeff_visible() {
+	const current_element_v = document.getElementById("footer_coeff");		
+	
+	if (current_element_v) {
+		const children4 = current_element_v.querySelectorAll("*");
+		children4.forEach(child4 => {
+			let last_name = child4.id.split("_");
+			last_name = last_name[last_name.length - 1];
+			
+			if ((!child4.id.includes("btn_backspace") && !child4.id.includes("icon_backspace")) || child4.id.includes("btn_backspace") )
+			{
+				child4.style.visibility = "visible";
+				child4.style.display = "block";
+			}
+		});
+	}
+}
+
+function footer_coeff_hidden() {
+	const current_element_h = document.getElementById("footer_coeff");	
+	
+	if (current_element_h) {
+		const children3 = current_element_h.querySelectorAll("*");
+		children3.forEach(child3 => {
+			child3.style.visibility = "hidden";
+			child3.style.display = "none";
+		});
+	}
+}
+
+function footer_status_visible() {
+	const current_element_v = document.getElementById("footer_status");		
+	
+	if (current_element_v) {
+		const children4 = current_element_v.querySelectorAll("*");
+		children4.forEach(child4 => {
+			let last_name = child4.id.split("_");
+			last_name = last_name[last_name.length - 1];
+			
+			if (child4.id == "btn_backspace_backspace" || child4.id == "btn_backspace" || last_name != "backspace")
+			{
+				child4.style.visibility = "visible";
+				child4.style.display = "block";
+			}
+		});
+	}
+}
+
+function footer_status_hidden() {
+	const current_element_h = document.getElementById("footer_status");	
+	
+	if (current_element_h) {
+		const children3 = current_element_h.querySelectorAll("*");
+		children3.forEach(child3 => {
+			child3.style.visibility = "hidden";
+			child3.style.display = "none";
+		});
+	}
+}
+
+function footer_shadow_hidden() {
+	webMI.gfx.setVisible("footer_shadow", false);
+	
+	const footer_shadow_element_h = document.getElementById("footer_shadow");
+	
+	if (footer_shadow_element_h) {
+		const children8 = footer_shadow_element_h.querySelectorAll("*");
+		children8.forEach(child8 => {
+			child8.style.visibility = "hidden";
+			child8.style.display = "none";
+		});
+	}
+}
+
+function footer_shadow_visible() {
+	webMI.gfx.setVisible("footer_shadow", true);
+	
+	const  footer_shadow_element_v = document.getElementById("footer_shadow");
+	
+	if (footer_shadow_element_v) {
+		const children7 = footer_shadow_element_v.querySelectorAll("*");
+		children7.forEach(child7 => {
+			child7.style.visibility = "visible";
+			child7.style.display = "block";
+		});
+	}
+}
+
+function footer_status_inactive() {
+	
+	webMI.trigger.fire("btn_inactive", "PSU_active");
+	webMI.trigger.fire("btn_inactive", "PSU_inactive");
+	webMI.trigger.fire("btn_inactive", "PSU_status_reset");
+	webMI.trigger.fire("btn_inactive", "PSU_status_check");
+	webMI.trigger.fire("btn_lamp_off", "PSU_active");
+	webMI.trigger.fire("btn_lamp_off", "PSU_inactive");
+}
+
+function footer_status_active() {
+	
+	webMI.trigger.fire("btn_active", "PSU_active");
+	webMI.trigger.fire("btn_active", "PSU_inactive");
+	webMI.trigger.fire("btn_active", "PSU_status_reset");
+	webMI.trigger.fire("btn_active", "PSU_status_check");
+}
+
+///////////////////////////*  유저 매뉴얼 버튼 클릭 이벤트 *///////////////////////////
+
+webMI.trigger.connect("UserManual_Open", function(e)
+{
+	
+	Click_Prevention("open");
+	let time_popup = document.getElementById("user_manual_popup");  
+
+	time_popup.setAttribute("x", "603");		//960 -357 
+	time_popup.setAttribute("y", "20");
+	webMI.trigger.fire("UserManual_Move");
+});
+
+webMI.trigger.connect("UserManual_Close", function(e)
+{
+	Click_Prevention("close")
+	let time_popup = document.getElementById("user_manual_popup");  
+	time_popup.setAttribute("x", "0");
+	time_popup.setAttribute("y", "1000");	// 화면 밖으로
+	
+});
+
+///////////////////* footer status 버튼 클릭 이벤트 */////////////////////////////////////
+///////////////// 활성화 버튼///////////////////
+webMI.addEvent("btn_active", "click", function(e) {
+	
+	if(nowClicked_cell == null || nowClicked_cell == undefined || now_tab != "상태정보")
+	{
+		return;		
+	}
+	
+	let now_text = nowClicked_cell + "_text_center";
+	let now_content = webMI.gfx.getText(now_text);	
+	
+	webMI.gfx.setText(now_text, "T{활성화}");
+	
+	webMI.trigger.fire("btn_lamp_on", "PSU_active");
+	webMI.trigger.fire("btn_lamp_off", "PSU_inactive");
+	
+});
+
+///////////////// 비활성화 버튼///////////////////
+webMI.addEvent("btn_inactive", "click", function(e) {
+	if(nowClicked_cell == null || nowClicked_cell == undefined || now_tab != "상태정보")
+	{
+		return;		
+	}
+	
+	let now_text = nowClicked_cell + "_text_center";
+	let now_content = webMI.gfx.getText(now_text);
+	
+	webMI.gfx.setText(now_text, "T{비활성화}");
+	
+	webMI.trigger.fire("btn_lamp_off", "PSU_active");
+	webMI.trigger.fire("btn_lamp_on", "PSU_inactive");
+});
+
+///////////////// 초기화 버튼///////////////////
+webMI.addEvent("btn_reset_status", "click", function(e) {
+
+	if(nowClicked_cell == null || nowClicked_cell == undefined || now_tab != "상태정보")
+	{
+		return;		
+	}
+
+	var temp_prevention_level =2;
+	Prevention_Check(temp_prevention_level, () => {
+		let now_text = nowClicked_cell + "_text_center";
+		let now_content = webMI.gfx.getText(now_text);
+		let value;
+		
+		webMI.gfx.setText(now_text, previousValues[nowClicked_cell + "_" + now_page]);
+		webMI.gfx.setFill(now_text, color_Font_Table_Data);			// 폰트 색상 기본
+	
+		delete checkValues[nowClicked_cell + "_" + now_page];	
+		
+		if (now_content == "T{활성화}")
+		{
+			value = true;
+		}
+		else if(now_content == "T{비활성화}")
+		{
+			value = false;
+		}
+		
+		webMI.data.write(data_addr_map[nowClicked_cell + "_" + now_page] + "_Temp", value);	
+		
+		if (Object.keys(checkValues).length == 0)
+		{
+			webMI.trigger.fire("btn_inactive", "PSU_apply");
+		}			
+		
+		footer_status_inactive();
+		nowClicked_cell = null;
+		preClicked_cell = null;
+	});
+});
+
+///////////////// 확인 버튼///////////////////
+webMI.addEvent("btn_check_status", "click", function(e) {
+	
+	let now_text = nowClicked_cell + "_text_center";
+	let now_content = webMI.gfx.getText(now_text);
+	let nowClicked_cell_page = nowClicked_cell + "_" + now_page;
+	let value;
+	
+	if(now_tab != "상태정보" || nowClicked_cell == null)
+	{
+		return;		
+	}
+	
+	var temp_prevention_level =2;
+	Prevention_Check(temp_prevention_level, () => {
+		
+		checkValues[nowClicked_cell_page] = now_content;	// 확인 값 저장
+		webMI.gfx.setText(now_text, now_content);
+		webMI.gfx.setFill(now_text, color_Green_Active);
+	
+		if (now_content == "T{활성화}")
+		{
+			value = true;
+		}
+		else if(now_content == "T{비활성화}")
+		{
+			value = false;
+		}
+			
+		webMI.data.write(data_addr_map[nowClicked_cell_page] + "_Temp", value);			
+		
+		footer_status_inactive();
+		nowClicked_cell = null;
+		preClicked_cell = null;
+		webMI.trigger.fire("btn_active", "PSU_apply");
+	});
+});
+
+///////////////// 전체 활성화 버튼///////////////////
+webMI.addEvent("btn_all_active", "click", function(e) {
+	if(now_tab != "상태정보")
+	{
+		return;		
+	}
+	
+	var temp_prevention_level =2;
+	Prevention_Check(temp_prevention_level, () => {
+
+		webMI.trigger.fire("btn_active", "PSU_apply");
+		let page = Number(now_page.slice(-1));
+		
+		for (let row = 1; row <= Total_Axis_Num; row++)
+		{
+			let now_page_temp = "status_" + Math.floor((row-1) / Visible_Row_Num + 1);
+			let row_temp = row % Visible_Row_Num;
+			row_temp = row_temp == 0 ? Visible_Row_Num : row_temp;	
+			
+			let cell_id = `tb_row${row_temp}_col1`;
+			let cell_id_page = cell_id + '_' + now_page_temp;	// 현재 페이지 포함 셀 아이디
+			
+			if (select_axis == "all")
+			{
+				webMI.data.write(data_addr_map[cell_id_page] + "_Temp", false);						
+				checkValues[cell_id_page] = "T{활성화}";
+			}
+			else if (rowMapping[row].includes(select_axis))
+			{
+				webMI.data.write(data_addr_map[cell_id_page] + "_Temp", false);						
+				checkValues[cell_id_page] = "T{활성화}";
+			}
+		}
+		
+		PageData_status(page);
+		footer_status_inactive();
+		nowClicked_cell = null;
+		preClicked_cell = null;
+	});
+});
+
+///////////////// 전체 비활성화 버튼///////////////////
+webMI.addEvent("btn_all_inactive", "click", function(e) {
+	if(now_tab != "상태정보")
+	{
+		return;		
+	}
+	
+	var temp_prevention_level =2;
+	Prevention_Check(temp_prevention_level, () => {
+	
+		webMI.trigger.fire("btn_active", "PSU_apply");
+		let page = Number(now_page.slice(-1));
+		
+		for (let row = 1; row <= Total_Axis_Num; row++)
+		{
+			let now_page_temp = "status_" + Math.floor((row-1) / Visible_Row_Num + 1);
+			let row_temp = row % Visible_Row_Num;
+			row_temp = row_temp == 0 ? Visible_Row_Num : row_temp;	
+			
+			let cell_id = `tb_row${row_temp}_col1`;
+			let cell_id_page = cell_id + '_' + now_page_temp;	// 현재 페이지 포함 셀 아이디
+			
+			if (select_axis == "all")
+			{
+				webMI.data.write(data_addr_map[cell_id_page] + "_Temp", false);						
+				checkValues[cell_id_page] = "T{비활성화}";
+			}
+			else if (rowMapping[row].includes(select_axis))
+			{
+				webMI.data.write(data_addr_map[cell_id_page] + "_Temp", false);						
+				checkValues[cell_id_page] = "T{비활성화}";
+			}
+		}
+		
+		PageData_status(page);
+		footer_status_inactive();
+		nowClicked_cell = null;
+		preClicked_cell = null;
+	});
+});
+
+/////////////권한 확인////////////////////////////////////////
+function Prevention_Check(prevention_level, callback)
+{
+	webMI.trigger.fire("Prevention_Check", {level : prevention_level, callback : function(access)	
+	{
+		if (access == false)
+		{
+			webMI.trigger.fire("Info_Popup_Open", { title : "T{권한}", info : "T{해당 기능에 대한 권한이 없습니다.}" });
+			
+			if (nowClicked_cell != null)
+			{
+				Cliked_Cell_Init();
+			}			
+			
+			return;
+		}
+		else
+		{
+			callback();
+		}
+	}});
+}
+
+//////////////////////////키패드 오픈//////////////////////////////////
+webMI.trigger.connect("Keyboard_Open", function(e)
+{
+	var type = e.value.type;
+	
+	var options = {};	
+	var max_len = 0;
+	var password_on = false;
+	
+	if (e.value.type == "ID")
+	{
+		max_len =15;
+		password_on =false;
+	}
+	else if(e.value.type == "PW")
+	{
+		max_len = 21;
+		password_on = true;
+	}	
+	
+	options["parameter"] = type;
+	options["max_len"] = max_len;
+	options["password_on"] = password_on;
+	
+	webMI.trigger.fire("keyboard_init", options);
+	
+	let popup = document.getElementById("popup_keyboard");  
+	popup.setAttribute("x", "310");
+	popup.setAttribute("y", "285");	
+});
+	
+////////////////키보드 종료///////////////////////////
+webMI.trigger.connect("Keyboard_Close", function(e)
+{
+	let popup = document.getElementById("popup_keyboard");  
+	popup.setAttribute("x", "2000");
+	popup.setAttribute("y", "2000");	
+});
+
+//////////////////////////로그인 팝업창 오픈//////////////////////////////////
+webMI.trigger.connect("Login_Open", function(e)
+{
+	Click_Prevention("open");
+	webMI.trigger.fire("Login_Popup_init");
+	
+	let popup = document.getElementById("login_popup");  
+	popup.setAttribute("x", "602");
+	popup.setAttribute("y", "213");	
+});
+	
+////////////////로그인 팝업창 종료///////////////////////////
+webMI.trigger.connect("Login_Close", function(e)
+{
+	Click_Prevention("close");
+	
+	let popup = document.getElementById("login_popup");  
+	popup.setAttribute("x", "2000");
+	popup.setAttribute("y", "2000");	
+});
+
+////////////////로그인 팝업창 올리기///////////////////////////
+webMI.trigger.connect("Login_Popup_Up", function(e)
+{
+	let popup = document.getElementById("login_popup");  
+	popup.setAttribute("y", "20");	
+});
+
+////////////////로그인 팝업창 내리기///////////////////////////
+webMI.trigger.connect("Login_Popup_Down", function(e)
+{
+	let popup = document.getElementById("login_popup");  
+	popup.setAttribute("y", "213");	
+});
+
+//////////////////////////정보 팝업창 오픈//////////////////////////////////
+webMI.trigger.connect("Info_Popup_Open", function(e)
+{
+	Click_Prevention("open");
+	webMI.trigger.fire("Info_Init", e.value );	
+	
+	let popup = document.getElementById("info_popup");  
+	popup.setAttribute("x", "602");
+	popup.setAttribute("y", "213");	
+});
+
+////////////////정보 팝업창 종료///////////////////////////
+webMI.trigger.connect("Info_Popup_Close", function(e)
+{
+	Click_Prevention("close");
+	
+	let popup = document.getElementById("info_popup");  
+	popup.setAttribute("x", "2000");
+	popup.setAttribute("y", "2000");	
+});
+
+//////////////////////////파일 선택 팝업창 오픈//////////////////////////////////
+webMI.trigger.connect("File_Popup_Open", function(e)
+{
+	Click_Prevention("open");
+	webMI.trigger.fire("File_Popup_Init", e.value );	
+	
+	let popup = document.getElementById("file_popup");  
+	popup.setAttribute("x", "660");
+	popup.setAttribute("y", "34");	
+});
+
+////////////////파일 선택 팝업창 종료///////////////////////////
+webMI.trigger.connect("File_Popup_Close", function(e)
+{
+	Click_Prevention("close");
+	
+	let popup = document.getElementById("file_popup");  
+	popup.setAttribute("x", "2000");
+	popup.setAttribute("y", "2000");	
+});
