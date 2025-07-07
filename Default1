@@ -1,0 +1,800 @@
+
+
+//////////////// V, A, L 축에 대한 갯수를 지정////////////////////////////// 
+//////////// localStorage에 저장됨
+const V_Axis_Num = 8;
+const A_Axis_Num = 5;
+const L_Axis_Num = 12; 
+ 
+var color = webMI.query["color"];								//각 페이지의 Parameters에 Global Parameters로 지정되어 있으며 주소는 Global Parameters -> SDS -> Color -> Color_List
+var current_page = "MAIN_Display";
+var color_mode = localStorage.getItem("Color_Mode");			//set은 00.Main -> Setting_System 페이지에서 이루어짐		
+Color_Day_Night(color_mode);
+
+/////////////Server -> My Server -> OBJECTS -> MSG 하위에 옮겨 놓은 노드(태그)에 등록한 알람의 활성화 갯수, Alarm_Count() 함수가 1초에 한번씩 주기적(setTimeout)으로 동작하여 갯수 측정
+////////////갯수는 localStorage에 저장됨
+/// Server -> My Server -> Alarming -> Groups에 Alarm, Fault, Wrning 그룹으로 등록한 알람의 활성화 갯수 변수들
+var warning_num = 0;
+var alarm_num = 0;
+var fault_num = 0;
+var total_alarm_num =0;			/// Server -> My Server -> Alarming -> Groups에 Alarm, Fault, Wrning 그룹으로 등록한 모든 활성화 알람 총갯수
+var non_ack_num = 0;				/// Ack가 되지 않은 알람의 갯수
+var flickering_toggle = false;		/// Side의 메시지 버튼의 깜박임을 위하여 에크가 되지 않은 알람이 있을 경우 alarm_count_cycle초에 한번씩 토글
+
+var alarm_count_cycle = 800;
+
+var logout_time = 60 * 10;			/// 자동로그아웃 시간 단위 s
+
+///// Side의 확장 버튼에 대한 고정값
+const tree_spacing = 71.296;			
+const data_tree_spacing = 230.01;
+
+//////// Side의 데이터, 세팅에 대한 확장 유무//////////
+//////// localStorage에도 저장됨
+var data_open = false;
+var setting_open = false;
+
+const btn_Data = document.getElementById("btn_Data");
+const btn_Setting = document.getElementById("btn_Setting");
+const btn_Chart = document.getElementById("btn_Chart");
+const btn_MSG = document.getElementById("btn_MSG");
+const btn_CPS = document.getElementById("btn_CPS");
+const btn_MAG = document.getElementById("btn_MAG");
+const btn_Probe = document.getElementById("btn_Probe");
+const btn_Function = document.getElementById("btn_Function");
+const btn_System = document.getElementById("btn_System");
+const btn_Test = document.getElementById("btn_Test");
+const btn_IGRF = document.getElementById("btn_IGRF");
+
+//////////// ID, PW, Level 초기 등록/////////////////////////////
+var id_arr = {};
+var pw_arr = {};
+var level_arr = {};
+
+///////////////////해당 장비에서 처음 시작 할 때 추가해야할 항목/////////////
+if (localStorage.getItem("Color_Mode") == null)
+{
+	localStorage.setItem("Color_Mode", "Night");
+}
+
+//////////////주기적으로 터치 카운트를 늘림, 카운트가 10분이 초과 되면 자동 로그아웃/////////////
+setTimeout(() => {NoTouchCount();},1000);
+
+//////////////알람 카운트 주기적 계산///////////////////////
+setTimeout(Alarm_Count, alarm_count_cycle);
+
+//////////////주기적으로 터치 카운트를 늘림, 카운트가 10분이 초과 되면 자동 로그아웃/////////////
+////////////// 터치, 클릭 시 초기화 되는 코드는 각 페이지에 iframe.addEventListener("click" 을 검색하면 나옴/////////////////////
+function NoTouchCount()
+{
+	var count = Number(localStorage.getItem("NoTouchCount"));
+	count = isNaN(count) ? 0 : count;
+
+	if (count >= logout_time)
+	{
+		if (localStorage.getItem("UserName") != "-")
+		{
+			let previous_level =  localStorage.getItem("UserLevel");
+			
+			let temp_level = "Level1";
+			
+			 localStorage.setItem("UserName", "-");
+			 localStorage.setItem("UserLevel", temp_level);
+			 webMI.trigger.fire("Login_Change",temp_level);
+			 webMI.data.write("AGENT.OBJECTS.Control._level", 1);
+			 
+			 webMI.trigger.fire("Event_Add", "@Auto Logout@ : " + previous_level);			/////Default에 정의되어있음 @@로 둘러싸인 부분은 번역됨
+		}
+	}
+	else
+	{
+		localStorage.setItem("NoTouchCount", count + 1);
+	}
+
+	setTimeout(NoTouchCount,1000);
+}
+
+///////////////////////////*  주/야간 색상 변경  *///////////////////////////
+
+webMI.trigger.connect("Color_Mode_Change",function(e)
+{
+	color_mode = e.value;
+	Color_Day_Night(color_mode);
+	Side_Color_Set();
+});
+
+function Color_Day_Night(color_mode)
+{
+	webMI.gfx.setFill("back_display", color.Main_Background[color_mode]);
+	webMI.gfx.setFill("side",color.Top_Bento[color_mode]);
+	
+	webMI.gfx.setStroke("icon_expansion1",color.Icon_Default[color_mode]);
+	webMI.gfx.setStroke("icon_expansion2",color.Icon_Default[color_mode]);	
+	webMI.gfx.setStroke("icon_expansion3",color.Icon_Default[color_mode]);
+	webMI.gfx.setStroke("icon_expansion4",color.Icon_Default[color_mode]);
+	webMI.gfx.setStroke("icon_expansion5",color.Icon_Default[color_mode]);
+	
+	webMI.gfx.setStroke("icon_Shrinking1",color.Icon_Default[color_mode]);
+	webMI.gfx.setStroke("icon_Shrinking2",color.Icon_Default[color_mode]);	
+	webMI.gfx.setStroke("icon_Shrinking3",color.Icon_Default[color_mode]);
+	webMI.gfx.setStroke("icon_Shrinking4",color.Icon_Default[color_mode]);
+	webMI.gfx.setStroke("icon_Shrinking5",color.Icon_Default[color_mode]);
+}
+
+///////////////ID/PW 레벨 정보 저장////////////////////////
+id_arr[0] = "level2";
+pw_arr[0] = "level2";
+level_arr[0] = "Level2";
+
+id_arr[1] = "level3";
+pw_arr[1] = "level3";
+level_arr[1] = "Level3";
+
+id_arr[2] = "Engineer";
+pw_arr[2] = "Engineer";
+level_arr[2] = "Level4";
+
+//////////////// ID/PW 확인/////////////////////
+webMI.trigger.connect("Login_Check",function(e)
+{
+	var id = e.value.id;
+	var pw = e.value.pw;
+	var callback = e.value.callback;	
+	var login_success = false;
+	var id_success = false;	
+	var pw_success = false;	
+	var level = 0;
+	
+	for (let i = 0; i < 10; i++)
+	{
+		//////////전부 소문자로 변경하여 ID는 대소문자 구분없이///////////////////////////
+		if (id_arr[i].toLowerCase() == id.toLowerCase())
+		{
+			id_success = true;
+		}
+		
+		///////////////////////////////ID가 같은것을 찾았으면 비밀번호도 같은지 확인////////////////
+		if (id_success)
+		{
+			////////////////////비밀번호가 같으면 로그인 성공//////////////////////////////////////
+			if (pw_arr[i] == pw)
+			{
+				pw_success = true;
+				level = level_arr[i];
+				break;
+			}
+			else								////////////////비밀번호 다름///////////////////////
+			{
+				break;
+			}
+		}
+	}
+	
+	//////////////////ID와 PW가 같으면 로그인 성공//////////////////////////////////
+	if (id_success && pw_success)
+	{
+		login_success = true;		
+	}
+	
+	/////////////////////콜백함수에 로그인 성공 유무와 레벨을 전달////////////
+	if (typeof callback == "function")
+	{
+		callback(login_success, level);
+	}
+});
+
+///////////////////////////*  로드 후 visible  *///////////////////////////
+
+webMI.addOnload(function() {
+	////////////////////////////////터치 입력이 있을 때 터치 카운트 0으로 초기화//////////////////////////////////////////
+    var iframe = webMI.rootWindow.document.querySelector("#mainframe").contentWindow.document.body;
+
+	iframe.addEventListener("click", () => {
+		localStorage.setItem("NoTouchCount",0);
+	});    
+    
+	webMI.rootWindow.Alarm_List_Data_Read();    
+    webMI.rootWindow.Event_Trans_List_Data_Read();
+    webMI.rootWindow.Chart_List_Data_Read();
+    
+    //////////////////////////////////언어 변환때문에 페이지라 로드 된건지 확인////////////////////////////
+    //////////////////////////////////언어 변환때문에 페이지 로드 시 Side 탭을 이전상태로 확장 및 타이틀 글자, Side 페이지 이동 버튼 색상을 원래대로////////////////
+    if (localStorage.getItem("Language_Change") == "true")
+	{
+		setTimeout(function()																																						
+		{
+			////////////////////////////////로딩창이 전시 중인지 확인 Library -> ATVISE -> Resources -> Index.htm에 함수 정의되어 있음//////////////////////////////////////
+			webMI.rootWindow.loading_State(function(e)					
+			{
+				////////////////언어 변환떄문에 로드된 것이기 때문에 현재 페이지는 시스템 페이지////////////////////
+				current_page = "System";
+				
+				let now_tap = localStorage.setItem("Now_Tap",current_page);	//현재 탭정보 저장
+				Side_Color_Set();																					//Side 탭 버튼 색상변경
+				
+				webMI.trigger.fire("Title_Change", current_page);							//타이틀 글자 변경 Top 페이지에 정의 되어있음
+				
+				if (localStorage.getItem("data_open") == "true")								//데이터 탭 확장이 되어있었는지 확인
+				{	
+					 Tree_Open_Close("data_open");													//데이터 탭 확장
+				}
+				
+				if (localStorage.getItem("setting_open") == "true")							//세팅 탭 확장이 되어있었는지 확인
+				{
+					Tree_Open_Close("setting_open");												//세팅 탭 확장
+				}
+			
+				localStorage.setItem("Language_Change", false);							//언어 변환 완료
+				
+				webMI.rootWindow.stopLoading();														//로딩 정지	Library -> ATVISE -> Resources -> Index.htm에 함수 정의되어 있음
+			});
+			
+		}, 500);
+	}
+	else			//언어변환으로 페이지라 로드된것이 아니라 최초 실행 또는 F5
+	{	
+		webMI.data.login("root", "thwkwpdjrl1!", function(e)															//최초실행 시 최고 권한으로 로그인 -> 로그인하지 않으면 Tag(Node)에 값을 쓸수가 없음
+		{
+			localStorage.setItem("Brightness", 100);												//밝기 값 100, 00.Main -> Setting_System 페이지에서 값 변경
+			webMI.trigger.fire("Brightness_Value_Change");									//밝기 값 변경 시 실제 화면 투명도 조절			Default 페이지에 정의되어있음
+			setTimeout(() => {webMI.rootWindow.stopLoading();}, 1000);			//일정 시간 후 로딩 정지	Library -> ATVISE -> Resources -> Index.htm에 함수 정의되어 있음
+		});	
+	
+		////////////////////////////////로딩창이 전시 중인지 확인 Library -> ATVISE -> Resources -> Index.htm에 함수 정의되어 있음//////////////////////////////////////
+		webMI.rootWindow.loading_State(function(e)
+		{
+			if (e == "none" || e == "" || e == null || e == undefined)
+			{
+				webMI.rootWindow.startLoading(0,0,1920,1080);	// 로딩이 시작하고 있지 않으면 로딩 실행
+			}
+		})	
+
+		setTimeout(function()																																							
+		{
+			/////////////////모든 값 초기화////////////////////////////////////////////////////
+			localStorage.setItem("Now_Tap", "Outline");
+			localStorage.setItem("UserName", "-");
+			localStorage.setItem("UserLevel", "Level1");
+			localStorage.setItem("NoTouchCount", 0);
+			localStorage.setItem("Language_Mode", "ko");							///////// 국문 영문 바꾸는건 00.Main -> Setting_System 페이지에서 이루어짐
+			webMI.gfx.setFill('btn_Outline_background', color.Selected[color_mode]); // 초기 색상 설정
+			webMI.gfx.setFill('btn_Outline_label', color.White[color_mode]);
+			localStorage.setItem("Language_Change", false);
+			localStorage.setItem("data_open", false);
+			localStorage.setItem("setting_open", false);	
+		
+			localStorage.setItem("V_Axis_Num", V_Axis_Num);
+			localStorage.setItem("A_Axis_Num", A_Axis_Num);
+			localStorage.setItem("L_Axis_Num", L_Axis_Num);
+		}, 250);
+	}
+});
+
+///////////////////////////*  ACK 버튼  *///////////////////////////
+
+webMI.rootWindow.webMI.callExtension("SYSTEM.LIBRARY.ATVISE.QUICKDYNAMICS.Alarmmanagement", {"id": ""});
+
+webMI.trigger.connect("All_Ack", function(e) {
+
+	webMI.data.call("Alarm_Live_List",{}, function(alarm_list)
+	{
+			for(const alarm of alarm_list) 
+			{
+				webMI.alarm.accept(alarm.address);
+			}
+
+	});
+});
+
+///////////////////////////*  SIDE 버튼 페이지 이동  *///////////////////////////
+
+webMI.addEvent("btn_Outline", "click", function(e)				// 개요 버튼
+{
+	current_page = "Outline";
+	webMI.trigger.fire("Title_Change", current_page);	// 화면 제목 변경
+	localStorage.setItem("Now_Tap", current_page);
+	
+	webMI.display.openDisplay("AGENT.DISPLAYS.00.Main.MAIN_DISPLAY");
+	Side_Color_Set();
+});
+
+
+webMI.addEvent("btn_DGS", "click", function(e)					// 소자 버튼
+{
+	current_page = "DGS";
+	webMI.trigger.fire("Title_Change", current_page);
+	localStorage.setItem("Now_Tap", current_page);
+	
+	webMI.display.openDisplay("AGENT.DISPLAYS.00.Main.Degaussing");
+	Side_Color_Set();
+});
+
+
+webMI.addEvent("btn_Data", "click", function(e)					// 데이터 버튼
+{
+	var text_arrow_Data = webMI.gfx.getText("btn_Data_text_arrow")
+
+	if (text_arrow_Data == "∨")
+	{
+		Tree_Open_Close("data_close");
+	}
+	else if (text_arrow_Data == ">")
+	{
+		 Tree_Open_Close("data_open");
+	}
+});
+
+
+webMI.addEvent("btn_CPS", "click", function(e)					// 데이터 - 코일 전원공급기 버튼
+{
+	current_page = "CPS";
+	webMI.trigger.fire("Title_Change", current_page);
+	localStorage.setItem("Now_Tap", current_page);
+	webMI.display.openDisplay("AGENT.DISPLAYS.00.Main.Data_PSU");
+	Side_Color_Set();
+});
+
+
+webMI.addEvent("btn_MAG", "click", function(e)				// 데이터 - 자기장 버튼
+{	
+	current_page = "MAG";
+	webMI.trigger.fire("Title_Change", current_page);
+	localStorage.setItem("Now_Tap", current_page);
+	webMI.display.openDisplay("AGENT.DISPLAYS.00.Main.Data_MagneticField");
+	Side_Color_Set();
+});
+
+
+webMI.addEvent("btn_Probe", "click", function(e)				// 데이터 - 3축 자기센서 프로브 버튼
+{
+	current_page = "Probe";
+	webMI.trigger.fire("Title_Change", current_page);
+	localStorage.setItem("Now_Tap", current_page);
+	webMI.display.openDisplay("AGENT.DISPLAYS.00.Main.Data_Probe");
+	Side_Color_Set();
+});
+
+
+webMI.addEvent("btn_Setting", "click", function(e)				// 설정 버튼
+{
+	const btn_Setting_label = document.getElementById("btn_Setting_label");
+	var text_arrow_Setting = webMI.gfx.getText("btn_Setting_text_arrow")
+	
+	if (text_arrow_Setting == "∨")
+	{
+		Tree_Open_Close("setting_close");
+	}
+	else if (text_arrow_Setting == ">")
+	{
+		 Tree_Open_Close("setting_open");
+	}
+});
+
+
+webMI.addEvent("btn_Function", "click", function(e)			// 설정 - 기능 버튼
+{
+	current_page = "Function";
+	webMI.trigger.fire("Title_Change", current_page);
+	localStorage.setItem("Now_Tap", current_page);
+	webMI.display.openDisplay("AGENT.DISPLAYS.00.Main.Setting_Function");
+	Side_Color_Set();
+});
+
+
+webMI.addEvent("btn_System", "click", function(e)			// 설정 - 시스템 버튼
+{
+	current_page = "System";
+	webMI.trigger.fire("Title_Change", current_page);
+	localStorage.setItem("Now_Tap", current_page);
+	webMI.display.openDisplay("AGENT.DISPLAYS.00.Main.Setting_System");
+	Side_Color_Set();
+});
+
+
+webMI.addEvent("btn_Test", "click", function(e)					// 설정 - 테스트 버튼
+{
+	current_page = "Test";
+	webMI.trigger.fire("Title_Change", current_page);
+	localStorage.setItem("Now_Tap", current_page);
+	webMI.display.openDisplay("AGENT.DISPLAYS.00.Main.Setting_Test");
+	Side_Color_Set();
+});
+
+
+webMI.addEvent("btn_IGRF", "click", function(e)				// 설정 - IGRF 계수 버튼
+{	
+	current_page = "IGRF";
+	webMI.trigger.fire("Title_Change", current_page);
+	localStorage.setItem("Now_Tap", current_page);
+	webMI.display.openDisplay("AGENT.DISPLAYS.00.Main.Setting_IGRF");
+	Side_Color_Set();
+});
+
+
+webMI.addEvent("btn_Chart", "click", function(e)				// 차트화면 버튼
+{
+	current_page = "Chart";
+	webMI.trigger.fire("Title_Change", current_page);
+	localStorage.setItem("Now_Tap", current_page);
+	webMI.display.openDisplay("AGENT.DISPLAYS.00.Main.Chart_" + color_mode);
+	Side_Color_Set();
+});
+
+
+webMI.addEvent("btn_MSG", "click", function(e)					// 메세지 버튼
+{
+	current_page = "MSG";
+	webMI.trigger.fire("Title_Change", current_page);
+	localStorage.setItem("Now_Tap", current_page);
+	webMI.display.openDisplay("AGENT.DISPLAYS.00.Main.Message_LiveHistory");
+	Side_Color_Set();
+});
+
+
+///////////////////////////*  SIDE 버튼 색상  *///////////////////////////
+
+function Side_Color_Set()
+{
+	///////////현재 탭정보를 가져와서 색상 변경////////////////////////
+	let now_tap = localStorage.getItem("Now_Tap");
+	
+	for (let i = 0; i < side_btn.length; i++)
+	{
+		let tap_name = side_btn[i].replace("btn_","");
+		
+		if (tap_name != now_tap)
+		{
+			webMI.gfx.setFill(side_btn[i] + '_background', "none");
+			webMI.gfx.setFill(side_btn[i] + '_label', color.Font_Table_Data[color_mode]);
+		}
+		else
+		{
+			webMI.gfx.setFill(side_btn[i] + '_background', color.Selected[color_mode]);			// 색상 변경(파랑)
+			webMI.gfx.setFill(side_btn[i] + '_label', color.White[color_mode]);
+		}
+	}
+	
+	localStorage.setItem("Chart_Display",false);			//// 캡쳐시 차트를 표시할지 안할지
+}
+
+////////////side 버튼 이름 배열/////////
+let side_btn = ["btn_Outline", "btn_DGS", "btn_CPS", "btn_MAG", "btn_Probe", "btn_Function", "btn_System", "btn_Test", "btn_IGRF", "btn_Chart", "btn_MSG"];
+
+///////////////////////////*  Event 등록  *///////////////////////////
+////////////////////메시지의 Event History에 표시할 내용 저장 함수 ////////////////////////////////
+var event_add = webMI.callExtension("SYSTEM.LIBRARY.PROJECT.QUICKDYNAMICS.AddEvent");		///Atvise 서버에서 실행됨
+
+webMI.trigger.connect("Event_Add",function (e) {
+	var desc = e.value;
+
+	event_add(desc);
+});
+
+
+///////////////////////////*  함 정보 확장 버튼 팝업  *///////////////////////////
+var expansion = false;
+
+webMI.addEvent("btn_expansion_click", "click", function(e)
+{
+	if (!expansion)
+	{
+		webMI.gfx.setVisible("icon_expansion", false);
+		webMI.gfx.setVisible("icon_Shrinking", true);
+		webMI.gfx.setVisible("Top_Popup",true)
+		webMI.trigger.fire("Prevention_req",{req : "open", parameter : "함 정보"});				///각각의 페이지에 Prevention_req -> Default 페이지의 Prevention_Open/ Prevention_Close 
+		expansion = true;
+	}
+	else
+	{
+		expansion = false;
+		webMI.gfx.setVisible("icon_expansion", true);
+		webMI.gfx.setVisible("icon_Shrinking", false);
+		webMI.gfx.setVisible("Top_Popup",false)		
+		webMI.trigger.fire("Prevention_req",{req : "close"});			///각각의 페이지에 Prevention_req -> Default 페이지의 Prevention_Open/ Prevention_Close 
+	}
+});
+
+///////////////////////////*  밝기 조정  *///////////////////////////
+
+webMI.trigger.connect("Brightness_Value_Change", function(e)
+{
+	var val = Number(localStorage.getItem("Brightness"));
+	webMI.rootWindow.setBrightness(val);	// 밝기 조정(index.htm에 정의한 함수)
+});
+
+
+///////////////////////////*  데이터, 설정 트리 열기/닫기  *///////////////////////////
+
+function Tree_Open_Close(tree)
+{
+	if (tree == "data_open")
+	{
+		webMI.gfx.setText("btn_Data_text_arrow", "∨");
+		
+		data_open = true;	// 데이터 트리 펼쳐진 상태
+		
+		localStorage.setItem("data_open", true);	// 로컬 스토리지 데이터 쓰기
+		
+		const btn_Data_yValue = btn_Data.getAttribute('y');
+
+		btn_CPS.setAttribute('y', parseFloat(btn_Data_yValue) + tree_spacing);
+		btn_MAG.setAttribute('y', parseFloat(btn_Data_yValue) + tree_spacing * 2);
+		btn_Probe.setAttribute('y', parseFloat(btn_Data_yValue) + tree_spacing * 3);
+		
+		const btn_Probe_yValue = btn_Probe.getAttribute('y');
+		
+		btn_Setting.setAttribute('y', parseFloat(btn_Probe_yValue) + tree_spacing);
+		
+		if (setting_open)	// 설정 페이지 트리가 펼쳐진 상태라면
+		{
+			const btn_Setting_yValue = btn_Setting.getAttribute('y');
+
+			btn_Function.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing);
+			btn_System.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing * 2);
+			btn_Test.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing * 3);
+			btn_IGRF.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing * 4);
+			
+			const btn_IGRF_yValue = btn_IGRF.getAttribute('y');
+
+			btn_Chart.setAttribute('y', parseFloat(btn_IGRF_yValue) + tree_spacing);
+			btn_MSG.setAttribute('y', parseFloat(btn_IGRF_yValue) + tree_spacing * 2);
+		}
+		else
+		{
+			const btn_Setting_yValue = btn_Setting.getAttribute('y');
+			
+			btn_Chart.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing);
+			btn_MSG.setAttribute('y', parseFloat(btn_Setting_yValue) +  tree_spacing * 2);
+		}
+		
+		webMI.gfx.setVisible("btn_CPS", true);		// 하위 자식 보이기
+		webMI.gfx.setVisible("btn_MAG", true);	// 하위 자식 보이기
+		webMI.gfx.setVisible("btn_Probe", true);	// 하위 자식 보이기
+	}
+	else if (tree == "data_close")
+	{
+		webMI.gfx.setText("btn_Data_text_arrow", ">");
+		
+		webMI.gfx.setVisible("Data", false);	// 하위 자식 숨기기
+		
+		data_open = false;	// 데이터 트리 닫힌 상태
+		
+		localStorage.setItem("data_open", false);	// 로컬 스토리지 데이터 쓰기
+		
+		const btn_Data_yValue = btn_Data.getAttribute('y');
+		
+		btn_Setting.setAttribute('y', parseFloat(btn_Data_yValue) + tree_spacing);
+		
+		if (setting_open) {	// 설정 페이지 트리가 펼쳐진 상태라면
+		
+			const btn_Setting_yValue = btn_Setting.getAttribute('y');
+
+			btn_Function.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing);
+			btn_System.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing * 2);
+			btn_Test.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing * 3);
+			btn_IGRF.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing * 4);
+			
+			const btn_IGRF_yValue = btn_IGRF.getAttribute('y');
+
+			btn_Chart.setAttribute('y', parseFloat(btn_IGRF_yValue) + tree_spacing);
+			btn_MSG.setAttribute('y', parseFloat(btn_IGRF_yValue) + tree_spacing * 2);
+		}
+		else {
+			const btn_Setting_yValue = btn_Setting.getAttribute('y');
+			
+			btn_Chart.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing);
+			btn_MSG.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing * 2);
+		}
+		
+		webMI.gfx.setVisible("btn_CPS", false);	// 하위 자식 숨기기
+		webMI.gfx.setVisible("btn_MAG", false);	// 하위 자식 숨기기
+		webMI.gfx.setVisible("btn_Probe", false);	// 하위 자식 숨기기
+	}
+	else if (tree == "setting_open")
+	{
+		webMI.gfx.setText("btn_Setting_text_arrow", "∨");
+		
+		setting_open = true;	// 설정 페이지 트리 펼쳐진 상태
+		
+		localStorage.setItem("setting_open", true);	// 로컬 스토리지 데이터 쓰기
+		
+		if (data_open)
+		{	// 데이터 페이지 트리가 펼쳐진 상태라면
+		
+			const btn_Setting_yValue = btn_Setting.getAttribute('y');
+
+			btn_Function.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing);
+			btn_System.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing * 2);
+			btn_Test.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing * 3);
+			btn_IGRF.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing * 4);
+			
+			const btn_IGRF_yValue = btn_IGRF.getAttribute('y');
+
+			btn_Chart.setAttribute('y', parseFloat(btn_IGRF_yValue) + tree_spacing);
+			btn_MSG.setAttribute('y', parseFloat(btn_IGRF_yValue) + tree_spacing * 2);
+		}
+		else
+		{
+			webMI.gfx.setVisible("btn_CPS", false);	// 데이터 트리 하위 자식 숨기기
+			webMI.gfx.setVisible("btn_MAG", false);
+			webMI.gfx.setVisible("btn_Probe", false);
+			
+			const btn_Setting_yValue = btn_Setting.getAttribute('y');
+			
+			btn_Function.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing);
+			btn_System.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing * 2);
+			btn_Test.setAttribute('y', parseFloat(btn_Setting_yValue) +tree_spacing * 3);
+			btn_IGRF.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing * 4);
+			
+			const btn_IGRF_yValue = btn_IGRF.getAttribute('y');
+
+			btn_Chart.setAttribute('y', parseFloat(btn_IGRF_yValue) + tree_spacing);
+			btn_MSG.setAttribute('y', parseFloat(btn_IGRF_yValue) + tree_spacing * 2);
+		}
+		
+		webMI.gfx.setVisible("btn_Function",true);	// 하위 자식 보이기
+		webMI.gfx.setVisible("btn_System",true);
+		webMI.gfx.setVisible("btn_Test",true);
+		webMI.gfx.setVisible("btn_IGRF",true);
+	}
+	else if (tree == "setting_close")
+	{
+		webMI.gfx.setText("btn_Setting_text_arrow", ">");
+		
+		setting_open = false;	// 설정 페이지 트리 닫힌 상태
+		
+		localStorage.setItem("setting_open", false);	// 로컬 스토리지 데이터 쓰기
+		
+		const btn_Setting_yValue = btn_Setting.getAttribute('y');
+		
+		if (data_open) {	// 데이터 페이지 트리가 펼쳐진 상태라면
+			btn_Chart.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing);
+			btn_MSG.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing * 2);
+		}
+		else
+		{
+			btn_Chart.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing);
+			btn_MSG.setAttribute('y', parseFloat(btn_Setting_yValue) + tree_spacing * 2);
+		}
+		
+		webMI.gfx.setVisible("btn_Function",false);	// 하위 자식 숨기기
+		webMI.gfx.setVisible("btn_System",false);
+		webMI.gfx.setVisible("btn_Test",false);
+		webMI.gfx.setVisible("btn_IGRF",false);
+	}
+}
+
+/////////////알람 갯수 계산//////////////
+function Alarm_Count()
+{
+	webMI.data.call("Alarm_Live_List",{},function(alarmlist)
+	{
+		non_ack_num = 0;
+		warning_num = 0;
+		alarm_num = 0;
+		fault_num = 0;
+		total_alarm_num = 0;
+		
+		//////////////그룹에 따라 분리 알람 갯수 분리/////////////////////////////
+		for (let i = 0; i < alarmlist.length; i++)
+		{
+			if (alarmlist[i].Groups.length > 0)
+			{
+				let group_name = (alarmlist[i].Groups[0].split('.').pop()).trim();
+			
+				warning_num = group_name == "Warning" ? warning_num + 1 : warning_num;
+				alarm_num = group_name == "Alarm" ? alarm_num + 1 : alarm_num;
+				fault_num = group_name == "Fault" ? fault_num + 1 : fault_num;
+				
+				non_ack_num = alarmlist[i].state == 1 ? non_ack_num + 1 : non_ack_num;
+			}
+		}
+				
+		total_alarm_num = warning_num + alarm_num + fault_num;				///전체 알람 갯수
+		
+		let now_tap_msg_true = localStorage.getItem("Now_Tap") == "MSG";		///// 현재 페이지가 메시지 페이지인지 확인
+		let no_alarm_color = now_tap_msg_true ? color.Selected[color_mode] : "none";		///////////// 현재 페이지가 메시지 페이지라면 no_alarm_color는 선택된 색상 아닌 경우 배경색 없음 
+		
+		if (total_alarm_num > 0)		//////////////////전체 알람 갯수가 0 이상이면
+		{
+			flickering_toggle = !flickering_toggle;																					///////flickering 비트에 따라 깜박임
+			let apply_color = flickering_toggle ? color.Red[color_mode] : no_alarm_color;
+			
+			if (non_ack_num > 0)																												//////// 에크가 되지 않은 알람이 한개 이상이면 붉은색으로 깜박임
+			{
+				webMI.gfx.setFill("btn_MSG_background", apply_color);	
+			}
+			else if (webMI.gfx.getFill("btn_MSG_background") != color.Red[color_mode])			
+			{
+				webMI.gfx.setFill("btn_MSG_background", color.Red[color_mode]);	
+			}
+		}
+		else
+		{
+			flickering_toggle = false;
+			
+			if (webMI.gfx.getFill("btn_MSG_background") == color.Red[color_mode])
+			{
+				webMI.gfx.setFill("btn_MSG_background", no_alarm_color);	
+			}
+		}
+		
+		if (webMI.gfx.getFill("btn_MSG_background") == "none")														/////////배경색이 없음이 아닐때에는 글자 색이 흰색으로 변경
+		{
+			webMI.gfx.setFill("btn_MSG_label",color.Font_Table_Data[color_mode]); 
+		}
+		else
+		{
+			webMI.gfx.setFill("btn_MSG_label",color.White[color_mode]);
+		}
+		
+		localStorage.setItem("warning_num", warning_num);
+		localStorage.setItem("alarm_num", alarm_num);
+		localStorage.setItem("fault_num", fault_num);		
+		localStorage.setItem("total_alarm_num", total_alarm_num);
+		localStorage.setItem("non_ack_num", non_ack_num);
+		
+		 webMI.trigger.fire("Alarm_Label_Update");																				///////////// top 페이지에 알람 갯수 카운트 변경
+	});
+		
+	setTimeout(Alarm_Count, alarm_count_cycle);
+}
+
+///////////////////////////*  팝업 열릴 때 뒤에 클릭 방지  *///////////////////////////
+///////////// 다른 페이지에서 팝업을 띄우면 뒤에 클릭방지 ///////////////////////
+webMI.trigger.connect("Prevention_Open", function(e)
+{
+		let shadow = document.getElementById("shadow");  
+
+		shadow.setAttribute("x", "0");
+		shadow.setAttribute("y", "0");
+		
+		if (e.value == "함 정보")															/// 함정보 팝업창을 띄웠을 때에는 함정보 팝업창을 확장시키는 버튼이 Visible로 변경
+		{
+			webMI.gfx.setVisible("btn_expansion_click",true);
+		}
+		else
+		{
+			webMI.gfx.setVisible("btn_expansion_click",false);
+		}
+});
+
+///////// 다른 페이지에서 팝업을 종료하면 뒤에 클릭방지 안보이게/////////////
+webMI.trigger.connect("Prevention_Close", function(e)
+{
+		let shadow = document.getElementById("shadow");  
+		
+		shadow.setAttribute("x", "3000");
+		shadow.setAttribute("y", "0");	// 화면 밖으로
+		
+		webMI.gfx.setVisible("btn_expansion_click",true);
+});
+
+/////////////////////////* 권한 레벨 확인 *////////////////////////////
+webMI.trigger.connect("Prevention_Check", function(e)							///// 현재 로그인된 레벨과 요청이온 작업에 대한 레벨을 비교하여 접근권한 승인하여 callback 실행
+{
+	var access_level = e.value.level;
+	var callback = e.value.callback;	
+	
+	var now_level = Number(localStorage.getItem("UserLevel").slice(-1));
+	var number_false = isNaN(now_level);
+	var access = false;
+	
+	if (number_false)
+	{
+		access = false
+	}
+	else if (now_level >= access_level)
+	{
+		access = true;
+	}
+
+	access = true;
+
+	callback(access);
+});
+
+webMI.addEvent("id_0", "click", function(e) {
+webMI.display.openDisplay("AGENT.DISPLAYS.Test.ssgTest.Test_Page");
+});
+
