@@ -1,0 +1,15 @@
+250720 수정
+
+//dialog 창에서 Enter키 안먹히게 수정
+dialog.PreviewKeyDown += (s, e) =>
+{
+    if (e.Key == System.Windows.Input.Key.Enter)
+        e.Handled = true;
+};
+
+//네비 바 접힌 상태로 부팅
+IsPaneOpen="False"
+
+//Address, Port 입력 순서 바꾸기
+ViewModel.UdpAddress = settingVm.ViewModel.Address;
+ViewModel.UdpPort = settingVm.ViewModel.Port;
