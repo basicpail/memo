@@ -1,0 +1,77 @@
+COM STATUS 파악
+프로토콜 정의서의 데이터들 확인
+fault 확인
+
+ -------------------CAN COMMUNICATION : tx---------------------
+ tx_data[0] = STBY_Start; - RUN LAMP 가 ON, StandByLamp가 ON 이면 STBY_Start가 ON이다. 즉 스탠바이를 시작한다는 뜻 STBY_START_ALARM과 같이 움직임
+ tx_data[1] = RunLamp; - F5_OUT = F5_OUT | 0x01; 말 그대로 RunLamp가 ON 됐다는 말.
+ tx_data[2] = Overload; - Overload가 감지되면 ON
+ tx_data[3] = ModeStatus; // MANUAL or ST'BY Mode
+ tx_data[4] = RUN_req; - ST'BY상태인 장치한테 작동 명령
+ tx_data[5] = ResetButton; - STOP상태와 RestButton 상태를 보고  ST'BY 상태인지 추측하는거 같다.
+ tx_data[6] = StandByLamp;
+ tx_data[7] = TXLowpress;
+
+
+--------------------------
+나의 모드가 MANUAL_MODE 면 ComStatus = Manual;
+나머지 두 장치 메시지 없으면 NoConnection;
+
+나머지 두 장치 메시지 오면(Error_Flag2,3 == Com_Normal)이면 조건문 진입
+StandBy_3_1RUN_Flag = 0;
+
+RunLamp 
+
+-----------------------------------------
+// 기본 통신 상태
+#define Com_Error           0   // 통신 불가
+#define Com_Normal          1   // 통신 정상
+
+// 모터 동작 상태 (CAN으로 공유)
+#define NoConnection        0   // 타 장치와 통신 연결 안됨
+#define StandBy_3to2        1   // 3대 중 2대만 통신이 되는 상태에서, 이전에 StandBy_3 였으면 StandBy_3to2로 전환
+#define StandBy_2           2   // 3대 중 2대만 통신이 되는 상태에서, 이전에 StandBy_2 였으면 StandBy_2 상태를 유지
+#define StandBy_3           3   // 3대 모두 통신이 되는 상태에서, 2대 RUN 중이고, 1대 STOP인 상태
+#define Manual              4   // 수동 모드
+#define StandBy_3_1RUN      5   // 3대 모두 통신이 되는 상태에서, 1대 RUN 중이고, 2대 STOP인 상태
+#define StandBy_3to2_1RUN   6   // 3대 중 2대만 통신이 되는 상태에서, 이전에 StandBy_3_1RUN 이었으면, StandBy_3to2_1RUN 상태로 전환하고, StandBy_3_1RUN_Flag=1;
+
+
+Error_Flag1 -> ID1번이 통신 잘 되다가 갑자기 연결이 끊어진 상태에 올린다.
+//1번이 연결이 끊겼는데 아까전 까지만해도 RUN 상태였다면, 그리고 내가 StandBy 상태라면 내가 RUN을 한다.
+if (StandByLamp == ON && rx_data1[1] == RUN)    RunStatus = RUN; // Auto Change Over
+
+----------------------------------------- 송수신 데이터를 중심으로 동작 분석----------------------------------------- 
+STBY START ALARM
+1번 창치에 오버로드 발생
+2번 장치 RUN 시작과 동시에 STBY START ALARM 발생
+1번 장치 정상상태복구 후 RESET 버튼 누르면 STAND BY 상태로 돌입
+2번 장치의 STAND BY와 STBY START ALAM 종료(1번 장치가 STBY, 2번 장치가 MAIN이 되는 타이밍)
+※STBY_START는 2번 장치 RUN 시작 ~ 1번 장치 RESET 사이의 시간동안 ON인 상태로 존재한다. 후에 ResetButton이 ON 인 상태이면 STAND_BY_LAMP를 OFF로 바꾸고 STAND_BY_LAMP가 OFF이면 STBY_START도 OFF로 변한다.
+
+장치의 STOP/RESET 버튼 눌렀을 때,
+rx_data1[0] == 1 || rx_data2[0] == 1 || rx_data3[0] ==1 이면 RESET BUTTON = ON 으로 된다.
+즉, 장치1,2,3 중 하나라도 STBY_START = 1인 상황이면 STOP/RESET 버튼을 눌렀을 때 RESET 기능을 활성화 시킨다.
+※ResetButton 는 이 때 ON 상태로 존재한다.
+※STBY_START_ALAM이 출력되고 있는 장치가 하나도 없으면 ResetButton OFF 된다.
+
+RUN_req를 보내는 경우W
+SendRunReq 함수에서 이 값을 ON/OFF 로 만든다.
+ModeStatus == STBY_MODE && ComStatus != NoConnection 이면 진입
+LowPress ON, RunLamp ON, BuildupTime 끝, RUN_req OFF 면 RUN_req 가 ON 된다.
+Stop_Overload 1, Overload ON, STBY_Overload 0, CountRunReq_S 끝, RUN_req OFF 면 RUN_req가 ON 된다.
+
+RUN_req를 받는 경우
+ReceiveRunReq에서 이 값을 받아서 처리한다.
+Overload == OFF && StandByLamp == ON 이면 진입
+Request_Flag가 0 이고 rx_data1,2,3[4] 가 ON이면 Request_Flag = 1, RunStatus 를 ON으로 전환
+
+----------------------------------------- 모델 별 신호 차이 -----------------------------------------
+V2-5-R / V2-5H-R 의 경우 STBY START ALARM 대신 RUN FAIL ALARM이 존재
+1번 장치가 RUN 상태에서 Overload 발생 시 RUN FAIL ALARM 신호 출력
+1번 장치의 RUN FAIL ALARM과 2번 장치의 RUN 상태가 동일한 타이밍에 발생
+1번 장치가 RESET 버튼을 누르면 STAND BY 모드로 전환되고, RUN FAIL ALARM은 중지된다.
+1번 장치의 RUN FAIL ALARM 중지와 2번 장치의 STAND BY 의 중지 타이밍은 동일하다. (1번 장치가 STBY, 2번 장치가 MAIN이 되는 타이밍)
+
+
+
