@@ -1,0 +1,54 @@
+
+// 예: Default 또는 서브 디스플레이의 Display Script
+webMI.addOnload(function(){
+  var root = webMI.rootWindow || window;
+
+  function whenReady(cb){
+    var tries=0, max=200;
+    (function poll(){
+      if (root.APP && root.APP.frames && root.APP.popups && root.APP.const.popup) return cb(root.APP);
+      if (tries++ > max) return console.error("APP modules not ready");
+      setTimeout(poll, 50);
+    })();
+  }
+
+  whenReady(function(APP){
+    // 프레임 풀 초기화(전역에서 1회만 필요하지만, 중복 호출되어도 무해)
+    var U = APP.const.popup;
+    APP.frames.init({
+      viewW:  U.viewport.w,
+      viewH:  U.viewport.h,
+      blankPath: U.path.blank,
+      frames: [U.frames.mask, U.frames.A, U.frames.B, U.frames.C, U.frames.D]
+    });
+
+    // 버튼 바인딩
+    webMI.addEvent("btnLoginOpen", ["click","mousedown"], function(){
+      APP.popups.login(U.rect.loginCenter, {
+        withMask: true,
+        maskRect: "full",                       // "full"|"same"|{x,y,w,h,z}
+        maskOpacity: 0.45,
+        preferredFrames: { popup: [U.frames.B] } // 우선 배치할 프레임
+      }).then(function(res){
+        console.log("[LOGIN OK]", res);
+      }).catch(function(err){
+        console.warn("[LOGIN CANCEL/ERR]", err);
+      });
+    });
+
+    webMI.addEvent("btnKeyboardOpen", "click", function(){
+      APP.popups.keyboard(U.rect.KeyboardBottom, {
+        withMask: false,
+        preferredFrames: { popup: [U.frames.C] },
+        params: { initial: "" }
+      }).then(function(res){
+        console.log("[KB OK]", res);
+      }).catch(function(err){
+        console.warn("[KB CANCEL/ERR]", err);
+      });
+    });
+
+    // 필요 시 수동 정리
+    // webMI.addEvent("btnCloseAll", "click", function(){ APP.popups.closeAll(); });
+  });
+});
